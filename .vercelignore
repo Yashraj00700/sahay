@@ -1,10 +1,12 @@
 node_modules
 apps/api
+apps/web/dist
+apps/web/node_modules
 infrastructure
 packages/db/.env
+packages/*/node_modules
 .env
 .env.local
 *.log
 .turbo
-apps/web/node_modules
-packages/*/node_modules
+.claude
