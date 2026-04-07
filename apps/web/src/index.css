@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base Styles ─────────────────────────────────────────────── */
+@layer base {
+  :root {
+    --color-primary: #6B4EFF;
+    --color-primary-hover: #5538D9;
+    --color-accent: #F59E0B;
+    --color-background: #F8F7FF;
+    --color-surface: #FFFFFF;
+    --color-border: #E5E3F0;
+    --color-text-primary: #0D0B1A;
+    --color-text-secondary: #5C5A6E;
+    --color-text-muted: #9B99AE;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-text-primary font-sans antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-border-strong;
+  }
+
+  /* Focus styles */
+  :focus-visible {
+    @apply outline-none ring-2 ring-violet-500 ring-offset-2;
+  }
+}
+
+/* ─── Component Utilities ────────────────────────────────────── */
+@layer components {
+  /* Shimmer loading skeleton */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      #F0EDFF 25%,
+      #E1DAFF 50%,
+      #F0EDFF 75%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+
+  /* AI typing indicator */
+  .ai-thinking {
+    background: linear-gradient(
+      90deg,
+      #6B4EFF20 25%,
+      #6B4EFF40 50%,
+      #6B4EFF20 75%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded-full;
+  }
+
+  /* Channel badge */
+  .channel-badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  /* Message bubble */
+  .bubble-customer {
+    @apply bg-[#F5F3F0] text-text-primary;
+    border-radius: 18px 18px 18px 4px;
+  }
+
+  .bubble-ai {
+    @apply bg-violet-500 text-white;
+    border-radius: 18px 18px 4px 18px;
+    background: linear-gradient(135deg, #6B4EFF 0%, #8669FF 100%);
+  }
+
+  .bubble-agent {
+    @apply bg-white text-text-primary border border-violet-200;
+    border-radius: 18px 18px 4px 18px;
+  }
+
+  .bubble-note {
+    @apply bg-saffron-50 text-text-primary border border-dashed border-saffron-300;
+    border-radius: 12px;
+  }
+
+  /* Keyboard shortcut badge */
+  .kbd {
+    @apply inline-flex items-center justify-center px-1.5 py-0.5 rounded
+           text-xs font-mono bg-background border border-border-strong
+           text-text-secondary min-w-[20px] h-5;
+  }
+
+  /* Conversation row */
+  .conv-row {
+    @apply flex items-start gap-3 px-4 py-3 cursor-pointer
+           hover:bg-violet-50 transition-colors duration-100
+           border-b border-border;
+  }
+
+  .conv-row.active {
+    @apply bg-violet-50 border-l-2 border-l-violet-500;
+  }
+
+  /* Metric card */
+  .metric-card {
+    @apply bg-white rounded-xl p-5 shadow-card border border-border;
+  }
+}
+
+/* ─── Animations ──────────────────────────────────────────────── */
+@layer utilities {
+  .animate-slide-in-right {
+    animation: slideInRight 200ms ease-out;
+  }
+
+  .animate-slide-in-up {
+    animation: slideInUp 200ms ease-out;
+  }
+
+  /* Prevent animation for users who prefer reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ─── Font Faces ──────────────────────────────────────────────── */
+/* JetBrains Mono for order IDs and code */
+.font-mono {
+  font-family: "JetBrains Mono", monospace;
+}
+
+/* Noto Sans Devanagari for Hindi text */
+.font-hindi {
+  font-family: "Noto Sans Devanagari", system-ui, sans-serif;
+}

@@ -1,0 +1,45 @@
+{
+  "name": "sahay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sahay — AI Customer Support Platform for Indian D2C Brands",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "turbo run db:generate --filter=@sahay/db",
+    "db:migrate": "turbo run db:migrate --filter=@sahay/db",
+    "db:push": "turbo run db:push --filter=@sahay/db",
+    "db:studio": "turbo run db:studio --filter=@sahay/db",
+    "db:seed": "turbo run db:seed --filter=@sahay/db",
+    "infra:up": "docker-compose -f infrastructure/docker-compose.yml up -d",
+    "infra:down": "docker-compose -f infrastructure/docker-compose.yml down",
+    "infra:logs": "docker-compose -f infrastructure/docker-compose.yml logs -f",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "turbo": "^2.5.3",
+    "prettier": "^3.5.3",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.0"
+  },
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": ["eslint --fix", "prettier --write"],
+    "*.{json,md,yml,yaml}": ["prettier --write"]
+  }
+}
