@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx turbo run build --filter=@sahay/web --force",
+  "buildCommand": "npm run build --workspace=apps/web",
   "outputDirectory": "apps/web/dist",
   "installCommand": "npm install",
   "framework": null,
