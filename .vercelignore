@@ -1,0 +1,10 @@
+node_modules
+apps/api
+infrastructure
+packages/db/.env
+.env
+.env.local
+*.log
+.turbo
+apps/web/node_modules
+packages/*/node_modules
