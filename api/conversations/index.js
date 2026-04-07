@@ -21,7 +21,7 @@ export default function handler(req, res) {
       updatedAt: new Date(Date.now() - 2 * 60000).toISOString(),
       customer: { id: 'cust-001', name: 'Ananya Sharma', phone: '+919876543210', tier: 'vip' },
       assignedAgent: null,
-      lastMessage: 'Mera order kab aayega? 3 din ho gaye hai 😔',
+      lastMessage: { id: 'msg-001', conversationId: 'conv-001', content: 'Mera order kab aayega? 3 din ho gaye hai 😔', senderType: 'customer', contentType: 'text', createdAt: new Date(Date.now() - 2 * 60000).toISOString() },
     },
     {
       id: 'conv-002',
@@ -37,7 +37,7 @@ export default function handler(req, res) {
       updatedAt: new Date(Date.now() - 8 * 60000).toISOString(),
       customer: { id: 'cust-002', name: 'Riya Patel', phone: null, tier: 'regular' },
       assignedAgent: null,
-      lastMessage: 'Which face oil is best for dry skin in winters?',
+      lastMessage: { id: 'msg-002', conversationId: 'conv-002', content: 'Which face oil is best for dry skin in winters?', senderType: 'customer', contentType: 'text', createdAt: new Date(Date.now() - 8 * 60000).toISOString() },
     },
     {
       id: 'conv-003',
@@ -53,7 +53,7 @@ export default function handler(req, res) {
       updatedAt: new Date(Date.now() - 15 * 60000).toISOString(),
       customer: { id: 'cust-003', name: 'Pooja Mehta', phone: '+918765432109', tier: 'regular' },
       assignedAgent: { name: 'Rahul Verma' },
-      lastMessage: 'I want a full refund, the product caused a reaction!!',
+      lastMessage: { id: 'msg-003', conversationId: 'conv-003', content: 'I want a full refund, the product caused a reaction!!', senderType: 'customer', contentType: 'text', createdAt: new Date(Date.now() - 15 * 60000).toISOString() },
     },
     {
       id: 'conv-004',
@@ -69,7 +69,7 @@ export default function handler(req, res) {
       updatedAt: new Date(Date.now() - 2.5 * 3600000).toISOString(),
       customer: { id: 'cust-004', name: 'Deepika Nair', phone: null, tier: 'vip' },
       assignedAgent: null,
-      lastMessage: 'Thanks! Got the tracking link 🙏',
+      lastMessage: { id: 'msg-004', conversationId: 'conv-004', content: 'Thanks! Got the tracking link 🙏', senderType: 'customer', contentType: 'text', createdAt: new Date(Date.now() - 2.5 * 3600000).toISOString() },
     },
     {
       id: 'conv-005',
@@ -85,7 +85,7 @@ export default function handler(req, res) {
       updatedAt: new Date(Date.now() - 5 * 60000).toISOString(),
       customer: { id: 'cust-005', name: 'Kavya Singh', phone: '+917654321098', tier: 'regular' },
       assignedAgent: null,
-      lastMessage: 'COD available hai? Online payment nahi kar sakti',
+      lastMessage: { id: 'msg-005', conversationId: 'conv-005', content: 'COD available hai? Online payment nahi kar sakti', senderType: 'customer', contentType: 'text', createdAt: new Date(Date.now() - 5 * 60000).toISOString() },
     },
   ]
 
