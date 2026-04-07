@@ -90,7 +90,7 @@ export default function handler(req, res) {
   ]
 
   return res.status(200).json({
-    conversations,
+    data: conversations,
     pagination: { total: conversations.length, page: 1, limit: 25, hasMore: false },
   })
 }
