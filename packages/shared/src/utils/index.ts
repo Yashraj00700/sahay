@@ -11,25 +11,15 @@ export function parseINR(str: string): number {
   return parseFloat(str.replace(/[₹,\s]/g, ''))
 }
 
-// ─── Phone Numbers ────────────────────────────────────────────
-export function normalizePhone(phone: string): string {
-  // Remove all non-digit characters
-  const digits = phone.replace(/\D/g, '')
-  // Already has country code (11+ digits)
-  if (digits.length >= 11) return `+${digits}`
-  // 10-digit Indian number — only prepend +91 if explicitly Indian context
-  if (digits.length === 10) return `+91${digits}`
-  // Return as-is with + prefix
-  return `+${digits}`
-}
-
-// Keep backward compat alias
-export const normalizeIndianPhone = normalizePhone
-
-export function parseWhatsAppPhone(waPhone: string): string {
-  // WhatsApp sends phones without + prefix: "919876543210"
-  const digits = waPhone.replace(/\D/g, '')
-  return `+${digits}`
+// ─── Phone Numbers (Indian) ───────────────────────────────────
+export function normalizeIndianPhone(phone: string): string {
+  // Strip spaces, dashes, parentheses
+  const cleaned = phone.replace(/[\s\-\(\)]/g, '')
+  // Add +91 if not present
+  if (cleaned.startsWith('+91')) return cleaned
+  if (cleaned.startsWith('91') && cleaned.length === 12) return `+${cleaned}`
+  if (cleaned.length === 10) return `+91${cleaned}`
+  return cleaned
 }
 
 export function formatIndianPhone(phone: string): string {

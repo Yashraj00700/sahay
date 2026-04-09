@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, text, boolean, timestamp, real, index, uniqueIndex,
+  pgTable, uuid, text, boolean, timestamp, decimal, index, uniqueIndex,
 } from 'drizzle-orm/pg-core'
 
 export const tenants = pgTable('tenants', {
@@ -19,7 +19,6 @@ export const tenants = pgTable('tenants', {
   whatsappToken: text('whatsapp_token'),
   whatsappVerifyToken: text('whatsapp_verify_token'),
   whatsappBusinessAccountId: text('whatsapp_business_account_id'),
-  waAppSecret: text('wa_app_secret'), // per-tenant WhatsApp App Secret for HMAC verification
   // Instagram
   instagramPageId: text('instagram_page_id'),
   instagramToken: text('instagram_token'),
@@ -27,7 +26,7 @@ export const tenants = pgTable('tenants', {
   aiPersonaName: text('ai_persona_name').default('Sahay'),
   aiLanguage: text('ai_language').default('hinglish'),
   aiTone: text('ai_tone').default('warm'),
-  aiConfidenceThreshold: real('ai_confidence_threshold').default(0.75),
+  aiConfidenceThreshold: decimal('ai_confidence_threshold', { precision: 3, scale: 2 }).default('0.75'),
   aiBrandVoice: text('ai_brand_voice'), // free text describing brand voice
   aiProhibitedPhrases: text('ai_prohibited_phrases').array().default([]),
   aiPreferredPhrases: text('ai_preferred_phrases').array().default([]),
@@ -35,7 +34,6 @@ export const tenants = pgTable('tenants', {
   timezone: text('timezone').default('Asia/Kolkata'),
   businessHours: text('business_hours'), // JSON string of hours config
   slaPolicies: text('sla_policies'), // JSON string
-  codConversionSettings: text('cod_conversion_settings'), // JSON: { enabled, discountPercent, delayHours }
   // Status
   isActive: boolean('is_active').default(true),
   onboardingCompletedAt: timestamp('onboarding_completed_at', { withTimezone: true }),

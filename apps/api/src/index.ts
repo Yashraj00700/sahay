@@ -1,13 +1,10 @@
 import 'dotenv/config'
 import Fastify from 'fastify'
-import { logger } from './lib/logger'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import jwt from '@fastify/jwt'
 import cookie from '@fastify/cookie'
-import swagger from '@fastify/swagger'
-import swaggerUi from '@fastify/swagger-ui'
 import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-adapter'
 import { createClient } from 'redis'
@@ -24,20 +21,9 @@ import { settingsRoutes } from './routes/settings'
 import { whatsappWebhook } from './routes/webhooks/whatsapp'
 import { instagramWebhook } from './routes/webhooks/instagram'
 import { shopifyWebhook } from './routes/webhooks/shopify'
-import { billingRoutes } from './routes/billing'
-import { teamRoutes } from './routes/team'
-import { auditRoutes } from './routes/audit'
-import { csatRoutes } from './routes/csat'
-import { returnsRoutes } from './routes/returns'
-import { campaignsRoutes } from './routes/campaigns'
 
 // Workers
 import { startWorkers } from './workers'
-import { startCrons } from './lib/crons'
-
-if (!process.env.JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required')
-}
 
 async function buildApp() {
   const isProd = process.env.NODE_ENV === 'production'
@@ -49,7 +35,6 @@ async function buildApp() {
     trustProxy: true,
     requestIdHeader: 'x-request-id',
     requestIdLogLabel: 'reqId',
-    bodyLimit: 5 * 1024 * 1024, // 5 MB — prevents oversized payload attacks
   })
 
   // ─── Security ────────────────────────────────────────────
@@ -74,33 +59,15 @@ async function buildApp() {
   })
 
   // ─── Auth ─────────────────────────────────────────────────
-  // Cookie plugin must be registered before JWT so that @fastify/jwt can read
-  // the 'accessToken' cookie during request.jwtVerify().
+  await app.register(jwt, {
+    secret: process.env.JWT_SECRET ?? 'dev-secret-change-in-production',
+    sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? '1h' },
+  })
+
   await app.register(cookie, {
     secret: process.env.JWT_SECRET,
     parseOptions: { httpOnly: true, secure: process.env.NODE_ENV === 'production' },
   })
-
-  await app.register(jwt, {
-    secret: process.env.JWT_SECRET!,
-    sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? '1h' },
-    // Extract JWT from the httpOnly 'accessToken' cookie (browser clients) in addition
-    // to the Authorization Bearer header (Socket.IO / programmatic clients).
-    cookie: {
-      cookieName: 'accessToken',
-      signed: false,
-    },
-  })
-
-  // ─── Swagger Docs ─────────────────────────────────────────
-  await app.register(swagger, {
-    openapi: {
-      info: { title: 'Sahay API', description: 'AI Customer Support for Indian D2C Brands', version: '1.0.0' },
-      components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } } },
-      security: [{ bearerAuth: [] }],
-    }
-  })
-  await app.register(swaggerUi, { routePrefix: '/docs', uiConfig: { docExpansion: 'list' } })
 
   // ─── Routes ───────────────────────────────────────────────
   await app.register(authRoutes, { prefix: '/api/auth' })
@@ -110,12 +77,6 @@ async function buildApp() {
   await app.register(kbRoutes, { prefix: '/api/kb' })
   await app.register(analyticsRoutes, { prefix: '/api/analytics' })
   await app.register(settingsRoutes, { prefix: '/api/settings' })
-  await app.register(billingRoutes, { prefix: '/api/billing' })
-  await app.register(teamRoutes, { prefix: '/api/team' })
-  await app.register(auditRoutes, { prefix: '/api/audit' })
-  await app.register(csatRoutes, { prefix: '/api/csat' })
-  await app.register(returnsRoutes, { prefix: '/api/returns' })
-  await app.register(campaignsRoutes, { prefix: '/api/campaigns' })
 
   // Webhooks (no auth middleware — verified via HMAC)
   await app.register(whatsappWebhook, { prefix: '/webhooks' })
@@ -155,10 +116,9 @@ async function buildApp() {
     const token = socket.handshake.auth.token as string
     if (!token) return next(new Error('Authentication required'))
     try {
-      const payload = app.jwt.verify(token) as { tenantId: string; agentId: string; exp?: number }
+      const payload = app.jwt.verify(token) as { tenantId: string; agentId: string }
       socket.data.tenantId = payload.tenantId
       socket.data.agentId = payload.agentId
-      socket.data.tokenExp = payload.exp
       socket.join(`tenant:${payload.tenantId}`)
       next()
     } catch {
@@ -169,16 +129,6 @@ async function buildApp() {
   io.on('connection', (socket) => {
     const { tenantId, agentId } = socket.data as { tenantId: string; agentId: string }
     app.log.info({ tenantId, agentId }, 'Agent connected via WebSocket')
-
-    // Periodically check token expiry while the socket remains open
-    const tokenCheckInterval = setInterval(() => {
-      const tokenExp = socket.data.tokenExp as number | undefined
-      if (tokenExp !== undefined && Date.now() > tokenExp * 1000) {
-        app.log.info({ tenantId, agentId }, 'Socket token expired — disconnecting')
-        socket.emit('auth:expired')
-        socket.disconnect(true)
-      }
-    }, 5 * 60 * 1000) // every 5 minutes
 
     socket.on('agent:viewing', ({ conversationId }: { conversationId: string }) => {
       socket.to(`tenant:${tenantId}`).emit('agent:viewing', {
@@ -201,7 +151,6 @@ async function buildApp() {
     })
 
     socket.on('disconnect', () => {
-      clearInterval(tokenCheckInterval)
       app.log.info({ tenantId, agentId }, 'Agent disconnected')
     })
   })
@@ -209,7 +158,7 @@ async function buildApp() {
   // ─── Error Handler ────────────────────────────────────────
   app.setErrorHandler((error: any, _request, reply) => {
     const statusCode = (error.statusCode as number) ?? 500
-    app.log.error({ err: error, statusCode }, String(error.message))
+    logger.error({ err: error, statusCode }, String(error.message))
 
     reply.status(statusCode).send({
       statusCode,
@@ -229,9 +178,6 @@ async function main() {
   // Start BullMQ workers
   await startWorkers()
 
-  // Start scheduled cron jobs
-  startCrons()
-
   const port = parseInt(process.env.PORT ?? '3001', 10)
   const host = process.env.HOST ?? '0.0.0.0'
 
@@ -240,6 +186,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  logger.error({ err }, 'Fatal error starting server')
+  console.error('Fatal error starting server:', err)
   process.exit(1)
 })

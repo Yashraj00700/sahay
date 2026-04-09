@@ -14,7 +14,6 @@
 import { db, knowledgeChunks } from '@sahay/db'
 import { eq, and, sql } from 'drizzle-orm'
 import { generateEmbedding } from './embeddings'
-import { logger } from '../../lib/logger'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,38 +99,43 @@ async function vectorSearch(
   tenantId: string,
   filters?: KBFilters,
 ): Promise<VectorCandidate[]> {
-  // Build the WHERE clause using parameterized sql template literals to prevent SQL injection.
-  // The embedding vector is constructed from server-generated floats and cast to ::vector.
   const embeddingLiteral = `[${queryEmbedding.join(',')}]`
 
-  let query = sql`
-    SELECT
-      kc.id,
-      1 - (kc.embedding <=> ${sql.raw(`'${embeddingLiteral}'`)}::vector) AS similarity
-    FROM knowledge_chunks kc
-    WHERE kc.tenant_id = ${tenantId}
-      AND kc.is_active = true
-      AND kc.embedding IS NOT NULL`
-
-  if (filters?.productId) {
-    query = sql`${query} AND kc.product_id = ${filters.productId}`
-  }
-  if (filters?.category) {
-    query = sql`${query} AND kc.category = ${filters.category}`
-  }
-  if (filters?.chunkType) {
-    query = sql`${query} AND kc.chunk_type = ${filters.chunkType}`
-  }
-  if (filters?.language) {
-    query = sql`${query} AND kc.language = ${filters.language}`
-  }
+  // Build dynamic WHERE clause for skin_type array filter
+  let skinTypeFilter = ''
   if (filters?.skinType) {
-    query = sql`${query} AND (kc.skin_types IS NULL OR kc.skin_types = '{}' OR ${filters.skinType} = ANY(kc.skin_types))`
+    // skin_types is a text[] column — check for array containment
+    skinTypeFilter = `AND (kc.skin_types IS NULL OR kc.skin_types = '{}' OR $3 = ANY(kc.skin_types))`
   }
 
-  query = sql`${query} ORDER BY similarity DESC LIMIT ${TOP_K_VECTOR}`
+  const filterParts: string[] = [
+    `kc.tenant_id = '${tenantId}'`,
+    `kc.is_active = true`,
+    `kc.embedding IS NOT NULL`,
+  ]
 
-  const rows = await db.execute<{ id: string; similarity: number }>(query)
+  if (filters?.productId) filterParts.push(`kc.product_id = '${filters.productId}'`)
+  if (filters?.category) filterParts.push(`kc.category = '${filters.category}'`)
+  if (filters?.chunkType) filterParts.push(`kc.chunk_type = '${filters.chunkType}'`)
+  if (filters?.language) filterParts.push(`kc.language = '${filters.language}'`)
+
+  const whereClause = filterParts.join(' AND ')
+
+  const rows = await db.execute<{ id: string; similarity: number }>(
+    sql.raw(`
+      SELECT
+        kc.id,
+        1 - (kc.embedding <=> '${embeddingLiteral}'::vector) AS similarity
+      FROM knowledge_chunks kc
+      WHERE ${whereClause}
+        ${filters?.skinType
+          ? `AND (kc.skin_types IS NULL OR kc.skin_types = '{}' OR '${filters.skinType}' = ANY(kc.skin_types))`
+          : ''
+        }
+      ORDER BY similarity DESC
+      LIMIT ${TOP_K_VECTOR}
+    `),
+  )
 
   return (rows as VectorCandidate[]).filter(r => r.similarity > 0.3)
 }
@@ -158,40 +162,37 @@ async function bm25Search(
 
   if (!sanitised) return []
 
-  // Pass tsquery string as a parameterized value to avoid injection.
-  // Metadata filter values are bound via sql template parameters.
-  let bm25Query = sql`
-    SELECT
-      kc.id,
-      ts_rank_cd(
-        to_tsvector('english', coalesce(kc.title, '') || ' ' || kc.content),
-        to_tsquery('english', ${sanitised})
-      ) AS rank
-    FROM knowledge_chunks kc
-    WHERE kc.tenant_id = ${tenantId}
-      AND kc.is_active = true
-      AND to_tsvector('english', coalesce(kc.title, '') || ' ' || kc.content)
-          @@ to_tsquery('english', ${sanitised})`
+  const filterParts: string[] = [
+    `kc.tenant_id = '${tenantId}'`,
+    `kc.is_active = true`,
+  ]
 
-  if (filters?.productId) {
-    bm25Query = sql`${bm25Query} AND kc.product_id = ${filters.productId}`
-  }
-  if (filters?.category) {
-    bm25Query = sql`${bm25Query} AND kc.category = ${filters.category}`
-  }
-  if (filters?.chunkType) {
-    bm25Query = sql`${bm25Query} AND kc.chunk_type = ${filters.chunkType}`
-  }
-  if (filters?.language) {
-    bm25Query = sql`${bm25Query} AND kc.language = ${filters.language}`
-  }
+  if (filters?.productId) filterParts.push(`kc.product_id = '${filters.productId}'`)
+  if (filters?.category) filterParts.push(`kc.category = '${filters.category}'`)
+  if (filters?.chunkType) filterParts.push(`kc.chunk_type = '${filters.chunkType}'`)
+  if (filters?.language) filterParts.push(`kc.language = '${filters.language}'`)
   if (filters?.skinType) {
-    bm25Query = sql`${bm25Query} AND (kc.skin_types IS NULL OR kc.skin_types = '{}' OR ${filters.skinType} = ANY(kc.skin_types))`
+    filterParts.push(`(kc.skin_types IS NULL OR kc.skin_types = '{}' OR '${filters.skinType}' = ANY(kc.skin_types))`)
   }
 
-  bm25Query = sql`${bm25Query} ORDER BY rank DESC LIMIT ${TOP_K_BM25}`
+  const whereClause = filterParts.join(' AND ')
 
-  const rows = await db.execute<{ id: string; rank: number }>(bm25Query)
+  const rows = await db.execute<{ id: string; rank: number }>(
+    sql.raw(`
+      SELECT
+        kc.id,
+        ts_rank_cd(
+          to_tsvector('english', coalesce(kc.title, '') || ' ' || kc.content),
+          to_tsquery('english', '${sanitised.replace(/'/g, "''")}')
+        ) AS rank
+      FROM knowledge_chunks kc
+      WHERE ${whereClause}
+        AND to_tsvector('english', coalesce(kc.title, '') || ' ' || kc.content)
+            @@ to_tsquery('english', '${sanitised.replace(/'/g, "''")}')
+      ORDER BY rank DESC
+      LIMIT ${TOP_K_BM25}
+    `),
+  )
 
   return rows as BM25Candidate[]
 }
@@ -298,7 +299,7 @@ async function incrementRetrievalCounts(chunkIds: string[]): Promise<void> {
       `),
     )
   } catch (err) {
-    logger.warn({ err }, '[rag] Failed to increment retrieval counts')
+    console.warn('[rag] Failed to increment retrieval counts:', err)
   }
 }
 
@@ -348,10 +349,8 @@ export async function retrieveContext(
   const topRRFIds = rrfResults.slice(0, TOP_K_FINAL * 3).map(r => r.id)
 
   // ── Fetch full rows for top candidates ───────────────────────────────────
-  // Always enforce tenant_id here (P0-9) — prevents cross-tenant data exposure
-  // even if an upstream RRF ID were somehow forged or leaked.
   const rows = await db.execute<FullChunkRow>(
-    sql`
+    sql.raw(`
       SELECT
         kc.id,
         kc.title,
@@ -365,8 +364,8 @@ export async function retrieveContext(
         kc.last_updated AS "lastUpdated",
         kc.retrieval_count AS "retrievalCount"
       FROM knowledge_chunks kc
-      WHERE kc.tenant_id = ${tenantId}
-        AND kc.id = ANY(${sql.raw(`ARRAY[${topRRFIds.map(id => `'${id}'`).join(',')}]::uuid[]`)})`
+      WHERE kc.id = ANY(ARRAY[${topRRFIds.map(id => `'${id}'`).join(',')}]::uuid[])
+    `),
   )
 
   // ── Step 5: Re-rank ──────────────────────────────────────────────────────

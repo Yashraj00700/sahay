@@ -67,7 +67,7 @@ function getGreeting(name: string): string {
   return `Good evening, ${firstName}! 🙏`
 }
 
-// ─── Deterministic chart data (7 days volume) ────────────────────────────────
+// ─── Mock chart data (7 days volume) ─────────────────────────────────────────
 
 function buildChartData() {
   const today = new Date()
@@ -75,7 +75,7 @@ function buildChartData() {
     const date = subDays(today, 6 - i)
     return {
       day: format(date, 'EEE'),
-      conversations: 10 + (i * 9) % 41,
+      conversations: Math.floor(Math.random() * 40 + 10),
     }
   })
 }
@@ -238,7 +238,6 @@ export function DashboardPage() {
     queryKey: ['analytics', 'overview', '7d'],
     queryFn: () => apiRequest<AnalyticsOverview>('GET', '/analytics/overview', undefined, { period: '7d' }),
     staleTime: 2 * 60 * 1000,
-    refetchInterval: 30000,
     retry: 2,
   })
 

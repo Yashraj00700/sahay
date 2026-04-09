@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, text, boolean, timestamp, decimal, integer, date,
+  pgTable, uuid, text, timestamp, decimal, integer, date,
   index, uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { tenants } from './tenants'
@@ -73,7 +73,7 @@ export const cannedResponses = pgTable('canned_responses', {
   shortcut: text('shortcut'),  // /greeting, /tracking etc.
   content: text('content').notNull(),
   channel: text('channel'),    // null = all channels
-  isShared: boolean('is_shared').default(true),  // true = team, false = personal
+  isShared: text('is_shared').default('true'),  // true = team, false = personal
   tags: text('tags').array().default([]),
   useCount: integer('use_count').default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),

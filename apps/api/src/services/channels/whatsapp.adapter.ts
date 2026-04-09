@@ -10,7 +10,6 @@ import axios from 'axios'
 import { db } from '@sahay/db'
 import { messages } from '@sahay/db'
 import { eq } from 'drizzle-orm'
-import { logger } from '../../lib/logger'
 
 const WA_API_BASE = 'https://graph.facebook.com/v18.0'
 
@@ -264,10 +263,10 @@ export async function processOutgoingWhatsApp(job: {
       })
       .where(eq(messages.id, messageId))
 
-    logger.info({ to, waMessageId: result.waMessageId }, '[WAOut] Message sent')
+    console.log(`[WAOut] ✅ Sent to ${to} — WA ID: ${result.waMessageId}`)
 
   } catch (err: any) {
-    logger.error({ err, to }, '[WAOut] Failed to send message')
+    console.error(`[WAOut] ❌ Failed to send to ${to}:`, err.message)
 
     await db.update(messages)
       .set({

@@ -79,9 +79,7 @@ export function LoginPage() {
       return response.data
     },
     onSuccess: (data) => {
-      // accessToken httpOnly cookie is set by the server automatically.
-      // token from body is stored in memory only (socketToken) for Socket.IO auth handshake.
-      setAuth({ token: data.token, agent: data.agent, tenant: data.tenant })
+      setAuth({ token: data.token, refreshToken: data.refreshToken, agent: data.agent, tenant: data.tenant })
       toast.success(`Welcome back, ${data.agent.name}! 🙏`, {
         style: { background: '#1a1628', color: '#fff', border: '1px solid #6B4EFF40' },
       })

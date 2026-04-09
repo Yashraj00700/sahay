@@ -1,9 +1,8 @@
 import type { FastifyPluginAsync } from 'fastify'
 import crypto from 'crypto'
 import { incomingWhatsAppQueue, type IncomingWhatsAppJob } from '../../lib/queues'
-import { db, tenants, messages } from '@sahay/db'
+import { db, tenants } from '@sahay/db'
 import { eq } from 'drizzle-orm'
-import { safeDecrypt } from '../../lib/encryption'
 
 export const whatsappWebhook: FastifyPluginAsync = async (app) => {
 
@@ -34,41 +33,23 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
   // POST /webhooks/whatsapp — Incoming messages
   // IMPORTANT: Must respond 200 within 20 seconds or Meta will retry
   app.post('/whatsapp', {
-    config: { rawBody: true, rateLimit: { max: 300, timeWindow: '1 minute' } }, // Need raw body for HMAC verification
+    config: { rawBody: true }, // Need raw body for HMAC verification
   }, async (request, reply) => {
+    // Immediately acknowledge receipt — process asynchronously
+    reply.status(200).send('EVENT_RECEIVED')
+
     try {
       // Verify HMAC signature
       const signature = request.headers['x-hub-signature-256'] as string
       if (!signature) {
         request.log.warn('WhatsApp webhook missing signature')
-        return reply.status(400).send('Missing signature')
+        return
       }
 
-      // BYOA: Extract phone_number_id from payload to find the owning tenant
-      // The phone_number_id is available in the raw payload before full parsing
-      let phoneNumberId: string | undefined
-      try {
-        const rawParsed = JSON.parse((request as any).rawBody.toString()) as WhatsAppWebhookPayload
-        phoneNumberId = rawParsed.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id
-      } catch {
-        // fallback to global secret
-      }
-
-      let appSecret = process.env.WA_APP_SECRET
-      if (phoneNumberId) {
-        // Look up the tenant by phone number ID
-        const tenantRow = await db.query.tenants.findFirst({
-          where: eq(tenants.whatsappPhoneNumberId, phoneNumberId),
-          columns: { waAppSecret: true },
-        })
-        if (tenantRow?.waAppSecret) {
-          appSecret = safeDecrypt(tenantRow.waAppSecret) ?? appSecret
-        }
-      }
-
+      const appSecret = process.env.WA_APP_SECRET
       if (!appSecret) {
-        request.log.error('No app secret found for webhook')
-        return reply.status(500).send('Server misconfiguration')
+        request.log.error('WA_APP_SECRET not configured')
+        return
       }
 
       const rawBody = (request as any).rawBody as Buffer
@@ -79,7 +60,7 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
 
       if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
         request.log.warn('WhatsApp webhook HMAC verification failed')
-        return reply.status(403).send('Invalid signature')
+        return
       }
 
       const body = request.body as WhatsAppWebhookPayload
@@ -137,30 +118,15 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
           // Handle status updates (sent/delivered/read)
           for (const status of value.statuses ?? []) {
             request.log.debug({ status }, 'WhatsApp message status update')
-
-            const statusTimestamp = new Date(parseInt(status.timestamp, 10) * 1000)
-            const timestampFields: Partial<{ deliveredAt: Date; readAt: Date }> = {}
-            if (status.status === 'delivered') timestampFields.deliveredAt = statusTimestamp
-            if (status.status === 'read') timestampFields.readAt = statusTimestamp
-
-            await db.update(messages)
-              .set({ channelStatus: status.status, ...timestampFields })
-              .where(eq(messages.channelMessageId, status.id))
-
-            request.log.info(
-              { messageId: status.id, status: status.status },
-              'WhatsApp message status persisted'
-            )
+            // TODO: Update message status in DB
+            // updateMessageStatus(phoneNumberId, status.id, status.status, status.timestamp)
           }
         }
       }
     } catch (err) {
       request.log.error({ err }, 'Error processing WhatsApp webhook')
-      return reply.status(500).send('Internal error')
+      // Do NOT re-throw — we already sent 200 OK
     }
-
-    // All async work is done — now acknowledge to Meta
-    return reply.status(200).send('EVENT_RECEIVED')
   })
 }
 

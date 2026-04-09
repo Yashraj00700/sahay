@@ -1,20 +1,17 @@
 import {
   pgTable, uuid, text, boolean, timestamp, decimal, integer,
-  jsonb, index, pgEnum,
+  jsonb, index,
 } from 'drizzle-orm/pg-core'
 import { tenants } from './tenants'
 import { conversations } from './conversations'
 import { agents } from './agents'
-
-export const messageSenderEnum = pgEnum('message_sender', ['customer', 'agent', 'ai', 'system'])
-export const messageStatusEnum = pgEnum('message_status', ['sending', 'sent', 'delivered', 'read', 'failed'])
 
 export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
   conversationId: uuid('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   // Sender
-  senderType: messageSenderEnum('sender_type').notNull(),
+  senderType: text('sender_type').notNull(), // customer|ai|agent|system
   senderId: uuid('sender_id').references(() => agents.id),
   // Content
   contentType: text('content_type').notNull().default('text'),
@@ -37,7 +34,7 @@ export const messages = pgTable('messages', {
   aiModel: text('ai_model'),  // claude-3-5-sonnet|gpt-4o-mini etc.
   // Channel metadata
   channelMessageId: text('channel_message_id'),  // WA message ID, IG message ID
-  channelStatus: messageStatusEnum('channel_status').default('sent'),
+  channelStatus: text('channel_status').default('sent'), // sending|sent|delivered|read|failed
   channelError: text('channel_error'),
   channelRawPayload: jsonb('channel_raw_payload'), // store original webhook payload
   // WhatsApp template

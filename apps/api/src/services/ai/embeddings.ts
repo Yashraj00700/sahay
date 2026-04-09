@@ -8,7 +8,6 @@
 import OpenAI from 'openai'
 import { createHash } from 'crypto'
 import { redis } from '../../lib/redis'
-import { logger } from '../../lib/logger'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -56,20 +55,23 @@ async function setCache(text: string, embedding: number[]): Promise<void> {
     await redis.setex(cacheKey(text), CACHE_TTL_SECONDS, JSON.stringify(embedding))
   } catch (err) {
     // Cache write failure should never crash the pipeline
-    logger.warn({ err }, '[embeddings] Redis cache write failed')
+    console.warn('[embeddings] Redis cache write failed:', err)
   }
 }
 
 // ─── Usage Logging ────────────────────────────────────────────────────────────
 
 function logUsage(batchSize: number, usage: EmbeddingUsage): void {
-  logger.info({
-    model: EMBEDDING_MODEL,
-    batchSize,
-    promptTokens: usage.promptTokens,
-    totalTokens: usage.totalTokens,
-    estimatedCostUsd: usage.estimatedCostUsd.toFixed(6),
-  }, '[embeddings] usage')
+  console.info(
+    '[embeddings] usage',
+    JSON.stringify({
+      model: EMBEDDING_MODEL,
+      batchSize,
+      promptTokens: usage.promptTokens,
+      totalTokens: usage.totalTokens,
+      estimatedCostUsd: usage.estimatedCostUsd.toFixed(6),
+    }),
+  )
 }
 
 // ─── Core Embedding Fetch (no cache) ─────────────────────────────────────────

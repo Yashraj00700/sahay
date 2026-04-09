@@ -5,7 +5,6 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { IntentCategory } from '@sahay/shared'
-import { logger } from '../../lib/logger'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -309,7 +308,7 @@ Classify the intent and return JSON only.`
     if (block.type !== 'text') throw new Error('Unexpected response type from Claude')
     raw = block.text.trim()
   } catch (err) {
-    logger.error({ err }, '[intent] Claude API error')
+    console.error('[intent] Claude API error:', err)
     // Fallback: return low-confidence default rather than crashing the pipeline
     return {
       intent: 'off_topic',
@@ -329,7 +328,7 @@ Classify the intent and return JSON only.`
   try {
     parsed = JSON.parse(jsonStr) as IntentResult
   } catch (err) {
-    logger.error({ err, raw }, '[intent] JSON parse error')
+    console.error('[intent] JSON parse error. Raw response:', raw)
     return {
       intent: 'off_topic',
       confidence: 0.1,

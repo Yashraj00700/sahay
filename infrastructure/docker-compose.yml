@@ -1,3 +1,5 @@
+version: '3.9'
+
 services:
   # ─── PostgreSQL 16 with pgvector extension ─────────────────
   postgres:
@@ -6,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: sahay_dev
       POSTGRES_USER: sahay
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sahaydev123}
+      POSTGRES_PASSWORD: sahaydev123
     ports:
       - "5432:5432"
     volumes:
@@ -31,7 +33,7 @@ services:
       redis-server
       --appendonly yes
       --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory-policy noeviction
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -58,7 +60,7 @@ services:
     container_name: sahay_pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: dev@sahay.ai
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-sahaydev123}
+      PGADMIN_DEFAULT_PASSWORD: sahaydev123
     ports:
       - "8082:80"
     depends_on:

@@ -1,22 +1,18 @@
 import {
   pgTable, uuid, text, boolean, timestamp, decimal, integer,
-  jsonb, index, pgEnum,
+  jsonb, index,
 } from 'drizzle-orm/pg-core'
 import { tenants } from './tenants'
 import { customers } from './customers'
 import { agents } from './agents'
 
-export const conversationStatusEnum = pgEnum('conversation_status', ['open', 'pending', 'snoozed', 'resolved', 'closed'])
-export const conversationChannelEnum = pgEnum('conversation_channel', ['whatsapp', 'instagram', 'webchat', 'email'])
-export const routingDecisionEnum = pgEnum('routing_decision', ['auto_respond', 'draft_for_review', 'route_to_human', 'route_to_senior'])
-
 export const conversations = pgTable('conversations', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
-  channel: conversationChannelEnum('channel').notNull(),
+  customerId: uuid('customer_id').notNull().references(() => customers.id),
+  channel: text('channel').notNull(),  // whatsapp|instagram|webchat|email
   // State
-  status: conversationStatusEnum('status').default('open'),
+  status: text('status').default('open'), // open|pending|snoozed|resolved|closed
   assignedTo: uuid('assigned_to').references(() => agents.id),
   // AI analysis
   primaryIntent: text('primary_intent'),
@@ -29,7 +25,7 @@ export const conversations = pgTable('conversations', {
   aiResolutionRate: decimal('ai_resolution_rate', { precision: 3, scale: 2 }),
   humanTouched: boolean('human_touched').default(false),
   escalationReason: text('escalation_reason'),
-  routingDecision: routingDecisionEnum('routing_decision'),
+  routingDecision: text('routing_decision'), // auto_respond|draft_for_review|route_to_human
   // Timing
   firstReplyAt: timestamp('first_reply_at', { withTimezone: true }),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),

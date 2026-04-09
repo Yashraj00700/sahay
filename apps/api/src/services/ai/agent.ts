@@ -22,7 +22,6 @@
 //       - Notify agent via socket
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { Server as SocketIOServer } from 'socket.io'
 import { db, conversations, messages, customers, tenants } from '@sahay/db'
 import { eq, and, desc, sql } from 'drizzle-orm'
 import { detectLanguage } from './language'
@@ -31,8 +30,6 @@ import { analyzeSentiment, type SentimentResult } from './sentiment'
 import { retrieveContext, type RAGChunk } from './rag'
 import { decideRouting, type EscalationSignals } from './router'
 import type { IntentCategory, SentimentLevel } from '@sahay/shared'
-import { safeDecrypt } from '../../lib/encryption'
-import { logger } from '../../lib/logger'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -70,7 +67,7 @@ interface ShopifyOrder {
   currency: string
   trackingNumber?: string
   trackingUrl?: string
-  lineItems: Array<{ title: string; quantity: number; price: string; product_id?: string }>
+  lineItems: Array<{ title: string; quantity: number; price: string }>
   createdAt: string
 }
 
@@ -159,7 +156,6 @@ function scrubMedicalClaims(text: string): { text: string; hadViolation: boolean
   let result = text
 
   for (const pattern of MEDICAL_CLAIM_PATTERNS) {
-    pattern.lastIndex = 0  // Reset stateful g-flag
     if (pattern.test(result)) hadViolation = true
   }
 
@@ -249,12 +245,11 @@ async function fetchShopifyOrder(
         title: String(li.title),
         quantity: Number(li.quantity),
         price: String(li.price),
-        product_id: li.product_id != null ? String(li.product_id) : undefined,
       })),
       createdAt: String(o.created_at),
     }
   } catch (err) {
-    logger.warn({ err }, '[agent] Shopify order fetch failed')
+    console.warn('[agent] Shopify order fetch failed:', err)
     return null
   }
 }
@@ -275,9 +270,6 @@ interface SystemPromptContext {
   customerTier: string
   totalOrders: number
   totalSpent: string
-  returnInterceptionActive: boolean
-  productRecommendations: string
-  detectedIntent?: IntentCategory
 }
 
 function buildSystemPrompt(ctx: SystemPromptContext): string {
@@ -295,22 +287,17 @@ function buildSystemPrompt(ctx: SystemPromptContext): string {
         : 'Always respond in English.'
 
   const ragXml = ctx.ragChunks.length > 0
-    ? ctx.ragChunks.map(c => {
-        const safeChunk = c.content.length > 2000
-          ? c.content.slice(0, 2000) + '...[truncated]'
-          : c.content
-        return (
-          `<knowledge_chunk id="${c.id}" source="${c.sourceType}" score="${c.score.toFixed(3)}">` +
-          `<title>${c.title ?? 'Untitled'}</title>` +
-          `<content>${safeChunk}</content>` +
-          `</knowledge_chunk>`
-        )
-      }).join('\n')
+    ? ctx.ragChunks.map(c =>
+        `<knowledge_chunk id="${c.id}" source="${c.sourceType}" score="${c.score.toFixed(3)}">` +
+        `<title>${c.title ?? 'Untitled'}</title>` +
+        `<content>${c.content}</content>` +
+        `</knowledge_chunk>`,
+      ).join('\n')
     : '<knowledge_chunk>No relevant knowledge found.</knowledge_chunk>'
 
-  const orderContext = ctx.shopifyOrder
-    ? `Order data: ${JSON.stringify(ctx.shopifyOrder, null, 2)}`
-    : `ORDER DATA UNAVAILABLE - Shopify API failed. DO NOT guess, invent, or assume any order details. Tell customer: "I'm unable to access your order right now due to a technical issue. Please try again in a few minutes or contact us directly."`
+  const shopifyJson = ctx.shopifyOrder
+    ? JSON.stringify(ctx.shopifyOrder, null, 2)
+    : 'null'
 
   const prohibited = ctx.prohibitedPhrases.length > 0
     ? `\n## NEVER use these phrases\n${ctx.prohibitedPhrases.map(p => `- "${p}"`).join('\n')}`
@@ -318,35 +305,6 @@ function buildSystemPrompt(ctx: SystemPromptContext): string {
 
   const preferred = ctx.preferredPhrases.length > 0
     ? `\n## PREFER these phrases\n${ctx.preferredPhrases.map(p => `- "${p}"`).join('\n')}`
-    : ''
-
-  const routineBuilderBlock = ctx.detectedIntent === 'routine_building'
-    ? `
-## SKINCARE ROUTINE BUILDER MODE
-The customer wants a personalized skincare routine. Your response MUST:
-1. Ask 2-3 clarifying questions if you don't have enough info (skin type, concerns, budget)
-2. If you have enough info, build a complete routine:
-   - MORNING: List products in application order (cleanser → toner → serum → moisturizer → SPF)
-   - EVENING: List products in application order
-3. For each product slot, recommend the most relevant product from the knowledge base
-4. Format as a clean numbered list with product names in **bold**
-5. End with: "Would you like to add any of these to your cart?"
-6. Keep it conversational and match the customer's language (Hindi/Hinglish/English)
-`
-    : ''
-
-  const returnInterceptionBlock = ctx.returnInterceptionActive
-    ? `
-## RETURN INTERCEPTION PROTOCOL
-The customer is requesting a return/exchange. Before accepting, you MUST:
-1. Express genuine empathy: Acknowledge their disappointment sincerely
-2. Offer usage guidance: Suggest they might be using the product incorrectly (provide specific tips for their product based on the knowledge base)
-3. Offer exchange: Ask if they'd prefer to exchange for a different variant that might suit them better
-4. Offer partial resolution: If eligible, mention a 10-15% partial refund as goodwill without processing a full return
-5. Only if they insist after all alternatives: Guide them to the returns process
-
-DO NOT immediately confirm the return. Try to resolve with empathy and alternatives first.
-`
     : ''
 
   return `You are ${ctx.personaName}, a customer support specialist for ${ctx.brandName}.
@@ -388,9 +346,9 @@ ${ragXml}
 
 ## Shopify Order Data
 <shopify_order>
-${orderContext}
+${shopifyJson}
 </shopify_order>
-${ctx.productRecommendations ? `## Product Recommendations for This Customer\n${ctx.productRecommendations}\nWhen relevant, naturally mention these products as suggestions — do NOT hard-sell. Only include if directly useful to the customer's query.\n` : ''}${routineBuilderBlock}${returnInterceptionBlock}
+
 ## Response Format
 Return ONLY a valid JSON object:
 {
@@ -417,7 +375,8 @@ Use line breaks rather than bullet points for WhatsApp/Instagram messages.`
 export async function runAIPipeline(
   conversationId: string,
   tenantId: string,
-  io?: SocketIOServer,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  io?: any,
 ): Promise<AIResult> {
   const startTime = Date.now()
 
@@ -442,24 +401,21 @@ export async function runAIPipeline(
   if (!conversation) throw new Error(`[agent] Conversation not found: ${conversationId}`)
   if (!tenant) throw new Error(`[agent] Tenant not found: ${tenantId}`)
 
-  // Last 20 messages (most recent first, then reversed for chronological context)
-  // Character budget below ensures we never blow the token limit even with large messages
+  // Last 10 messages (most recent first, then reversed for chronological context)
   const recentMessages = await db
     .select()
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(desc(messages.sentAt))
-    .limit(20)
+    .limit(10)
 
   recentMessages.reverse()
 
-  const customerRows = conversation.customerId
-    ? await db
-        .select()
-        .from(customers)
-        .where(eq(customers.id, conversation.customerId))
-        .limit(1)
-    : []
+  const customerRows = await db
+    .select()
+    .from(customers)
+    .where(eq(customers.id, conversation.customerId))
+    .limit(1)
 
   const customer = customerRows[0] ?? null
 
@@ -512,7 +468,7 @@ export async function runAIPipeline(
       shopifyOrder = await fetchShopifyOrder(
         orderId,
         tenant.shopifyDomain,
-        safeDecrypt(tenant.shopifyAccessToken) ?? tenant.shopifyAccessToken,
+        tenant.shopifyAccessToken,
       )
     }
   }
@@ -524,35 +480,6 @@ export async function runAIPipeline(
     skinType: skinTypeEntity?.value,
     language: effectiveLanguage !== 'other' ? effectiveLanguage : undefined,
   })
-
-  // ── Step 7b: Return interception check ───────────────────────────────────
-
-  const RETURN_INTENTS = new Set<IntentCategory>(['order_return', 'order_exchange'])
-  const existingCustomFields = (conversation.customFields as Record<string, unknown>) ?? {}
-  const alreadyIntercepted = existingCustomFields.returnIntercepted === true
-  const isReturnIntent = RETURN_INTENTS.has(intentResult.intent)
-  const returnInterceptionActive =
-    isReturnIntent &&
-    sentimentResult.sentiment !== 'very_negative' &&
-    !alreadyIntercepted
-
-  if (returnInterceptionActive) {
-    // Flag the conversation so we don't intercept again on subsequent turns
-    await db
-      .update(conversations)
-      .set({
-        customFields: {
-          ...existingCustomFields,
-          returnIntercepted: true,
-          returnStatus: 'pending',
-          returnReason: intentResult.intent,
-          returnInterceptedAt: new Date().toISOString(),
-        },
-        primaryIntent: 'return_request',
-        updatedAt: new Date(),
-      })
-      .where(eq(conversations.id, conversationId))
-  }
 
   // ── Step 8: Routing decision ──────────────────────────────────────────────
 
@@ -572,7 +499,9 @@ export async function runAIPipeline(
     customerTier: (customer?.tier ?? 'new') as 'new' | 'loyal' | 'vip',
     orderValue: shopifyOrder ? parseFloat(shopifyOrder.totalPrice) : undefined,
     escalationSignals,
-    confidenceThreshold: tenant.aiConfidenceThreshold ?? undefined,
+    confidenceThreshold: tenant.aiConfidenceThreshold
+      ? parseFloat(String(tenant.aiConfidenceThreshold))
+      : undefined,
   })
 
   // Persist analysis to conversation record
@@ -640,46 +569,8 @@ export async function runAIPipeline(
 
   // ── Step 9: Generate AI response ──────────────────────────────────────────
 
-  // ── Step 9a: Product recommendation context ───────────────────────────────
-  // When the intent signals product discovery, fetch complementary product chunks
-  // from the knowledge base based on what the customer has already purchased.
-
-  const purchasedProductIds = shopifyOrder
-    ? shopifyOrder.lineItems.map(li => li.product_id).filter((id): id is string => Boolean(id))
-    : []
-
-  const RECOMMENDATION_INTENTS = new Set<IntentCategory>([
-    'product_recommendation', 'routine_building', 'product_info',
-  ])
-  const isRecommendationIntent = RECOMMENDATION_INTENTS.has(intentResult.intent)
-
-  let productRecommendations = ''
-
-  if (isRecommendationIntent && purchasedProductIds.length > 0) {
-    try {
-      const recResult = await retrieveContext(
-        `complementary products for customer who bought: ${purchasedProductIds.slice(0, 5).join(', ')}`,
-        tenantId,
-        { chunkType: 'product' },
-      )
-      if (recResult.chunks.length > 0) {
-        productRecommendations = recResult.chunks
-          .map(c => `- ${c.title ?? c.productName ?? 'Product'}: ${c.content.slice(0, 300)}`)
-          .join('\n')
-      }
-    } catch (err) {
-      logger.warn({ err }, '[agent] Product recommendation RAG fetch failed')
-    }
-  }
-
-  const safePersonaName = (tenant.aiPersonaName || 'Assistant')
-    .replace(/[\n\r]/g, ' ')  // no newlines
-    .replace(/[^a-zA-Z0-9\s\-_.]/g, '')  // alphanumeric only
-    .trim()
-    .slice(0, 50)  // max 50 chars
-
   const systemPrompt = buildSystemPrompt({
-    personaName: safePersonaName,
+    personaName: tenant.aiPersonaName ?? 'Sahay',
     brandName: tenant.shopName,
     language: effectiveLanguage,
     aiTone: tenant.aiTone ?? 'warm',
@@ -692,9 +583,6 @@ export async function runAIPipeline(
     customerTier: customer?.tier ?? 'new',
     totalOrders: customer?.totalOrders ?? 0,
     totalSpent: String(customer?.totalSpent ?? '0'),
-    returnInterceptionActive,
-    productRecommendations,
-    detectedIntent: intentResult.intent,
   })
 
   const model = SIMPLE_INTENTS.has(intentResult.intent)
@@ -708,35 +596,12 @@ export async function runAIPipeline(
       io.to(`tenant:${tenantId}`).emit('ai:typing', { conversationId, isTyping: true })
     }
 
-    // Build messages array from conversation history (up to 20, no system messages)
-    // Apply a character budget to guard against huge messages blowing the token limit.
-    // Rough estimate: 1 token ≈ 4 chars; budget ~10k tokens for history.
-    const MAX_HISTORY_CHARS = 40000
-    const historyMessages = recentMessages
-      .filter(msg => msg.senderType === 'customer' || msg.senderType === 'agent')
-    let historyCharCount = 0
-    const safeHistoryMessages: typeof historyMessages = []
-    // Iterate from most-recent to oldest so we always keep the freshest context
-    for (const msg of [...historyMessages].reverse()) {
-      const content = typeof msg.content === 'string' ? msg.content : ''
-      if (historyCharCount + content.length > MAX_HISTORY_CHARS) break
-      historyCharCount += content.length
-      safeHistoryMessages.unshift(msg)
-    }
-    const messagesForClaude: Array<{ role: 'user' | 'assistant'; content: string }> = [
-      ...safeHistoryMessages.map(msg => ({
-        role: msg.senderType === 'customer' ? 'user' as const : 'assistant' as const,
-        content: msg.content ?? '',
-      })),
-      { role: 'user' as const, content: messageText },
-    ]
-
     const completion = await anthropic.messages.create({
       model,
       max_tokens: 1024,
       temperature: 0.3,
       system: systemPrompt,
-      messages: messagesForClaude,
+      messages: [{ role: 'user', content: messageText }],
     })
 
     const block = completion.content[0]
@@ -767,17 +632,13 @@ export async function runAIPipeline(
 
     parsedResponse = JSON.parse(jsonStr)
   } catch {
-    // Don't expose raw AI output to customer
-    return {
-      conversationId,
-      decision: 'route_to_human',
-      intent: intentResult.intent,
-      sentiment: sentimentResult.sentiment,
+    // Graceful fallback: treat raw output as the response
+    parsedResponse = {
+      response: rawResponse,
       language: effectiveLanguage,
-      confidence: 0,
       citations: [],
-      escalationReason: 'AI response parsing failed',
-      processingMs: Date.now() - startTime,
+      confidence: intentResult.confidence * 0.9,
+      needsHumanReview: false,
     }
   }
 
@@ -788,13 +649,13 @@ export async function runAIPipeline(
   // 1. Medical claim scrub
   const scrubResult = scrubMedicalClaims(responseText)
   if (scrubResult.hadViolation) {
-    logger.warn({ conversationId }, '[agent] Medical claim scrubbed')
+    console.warn(`[agent] Medical claim scrubbed — conversation ${conversationId}`)
   }
   responseText = scrubResult.text
 
   // 2. PII safety check
   if (containsPII(responseText)) {
-    logger.error({ conversationId }, '[agent] PII in AI response — routing to human')
+    console.error(`[agent] PII in AI response — routing to human (conversation ${conversationId})`)
 
     await db
       .update(conversations)
@@ -859,9 +720,8 @@ export async function runAIPipeline(
       .set({ isOptout: true, optoutAt: new Date() })
       .where(eq(customers.id, customer.id))
 
-    logger.info(
-      { customerId: customer.id, optoutAt: new Date().toISOString() },
-      '[agent] STOP keyword — customer opted out',
+    console.info(
+      `[agent] STOP keyword — customer ${customer.id} opted out at ${new Date().toISOString()}`,
     )
   }
 

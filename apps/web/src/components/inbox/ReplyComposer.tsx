@@ -1,12 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Paperclip, Smile, Send, Hash } from 'lucide-react'
 import clsx from 'clsx'
 import type { Channel } from '@sahay/shared'
-import { api } from '../../lib/api'
-import { useAuthStore } from '../../store/auth.store'
-import { queryKeys } from '../../lib/queryClient'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,13 +17,18 @@ interface ReplyComposerProps {
   channel: Channel
   onSend: (content: string) => void
   customerName?: string
-  /** Pass a mutable ref; ReplyComposer will assign a focus() callback to it */
-  focusRef?: React.MutableRefObject<(() => void) | null>
-  /** When set, this text is appended to the composer value (then cleared via onAppendConsumed) */
-  appendText?: string | null
-  /** Called after appendText has been consumed so the parent can reset it */
-  onAppendConsumed?: () => void
 }
+
+// ─── Fake canned responses for demo ──────────────────────────────────────────
+
+const CANNED_RESPONSES: CannedResponse[] = [
+  { shortcut: '/greet',   title: 'Greeting',          content: 'Hello! Thank you for reaching out to us. How can I help you today?' },
+  { shortcut: '/order',   title: 'Order Status',       content: 'I can help you check your order status. Could you please share your order number?' },
+  { shortcut: '/delay',   title: 'Delivery Delay',     content: 'We sincerely apologise for the delay in your delivery. Our team is working on it and you will receive your order shortly.' },
+  { shortcut: '/return',  title: 'Return Policy',      content: 'We offer a 7-day easy return policy. Please visit our website or share the product details to initiate a return.' },
+  { shortcut: '/thanks',  title: 'Thank You',          content: 'Thank you for your patience and understanding. Is there anything else I can help you with?' },
+  { shortcut: '/resolve', title: 'Issue Resolved',     content: 'I am glad we could resolve your issue today! Please feel free to reach out if you need any further assistance.' },
+]
 
 // WA templates are 1024 chars; other channels can be longer
 const CHAR_LIMITS: Record<Channel, number | null> = {
@@ -56,41 +57,13 @@ function ChannelBadge({ channel }: { channel: Channel }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ReplyComposer({ conversationId, channel, onSend, customerName, focusRef, appendText, onAppendConsumed }: ReplyComposerProps) {
+export function ReplyComposer({ conversationId, channel, onSend, customerName }: ReplyComposerProps) {
   const [value, setValue] = useState('')
   const [showCannedMenu, setShowCannedMenu] = useState(false)
   const [cannedSearch, setCannedSearch] = useState('')
   const [cannedIndex, setCannedIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  // Expose focus callback to parent via ref
-  useEffect(() => {
-    if (focusRef) {
-      focusRef.current = () => textareaRef.current?.focus()
-    }
-    return () => {
-      if (focusRef) focusRef.current = null
-    }
-  }, [focusRef])
-
-  // When appendText changes (e.g. product "Add to reply" or Edit suggestion),
-  // append it to the current composer value and notify parent to clear it.
-  useEffect(() => {
-    if (appendText != null && appendText !== '') {
-      setValue(prev => prev + appendText)
-      textareaRef.current?.focus()
-      onAppendConsumed?.()
-    }
-  }, [appendText, onAppendConsumed])
   const charLimit = CHAR_LIMITS[channel]
-
-  const tenantId = useAuthStore((s) => s.tenant?.id ?? '')
-  const { data: cannedResponses = [] } = useQuery<CannedResponse[]>({
-    queryKey: queryKeys.settings.cannedResponses(tenantId),
-    queryFn: () => api.get<CannedResponse[]>('/canned-responses').then(r => r.data),
-    staleTime: 5 * 60 * 1000,
-    enabled: !!tenantId,
-  })
 
   const placeholder = customerName
     ? `Reply to ${customerName.split(' ')[0]}… (⌘ Enter to send)`
@@ -106,7 +79,7 @@ export function ReplyComposer({ conversationId, channel, onSend, customerName, f
     el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`
   }, [value])
 
-  const filteredCanned = cannedResponses.filter(c =>
+  const filteredCanned = CANNED_RESPONSES.filter(c =>
     c.shortcut.includes(cannedSearch) || c.title.toLowerCase().includes(cannedSearch.toLowerCase())
   )
 

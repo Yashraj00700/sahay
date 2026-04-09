@@ -21,7 +21,7 @@ async function seed() {
     aiPersonaName: 'Priti',
     aiLanguage: 'hinglish',
     aiTone: 'warm',
-    aiConfidenceThreshold: 0.75,
+    aiConfidenceThreshold: '0.75',
     timezone: 'Asia/Kolkata',
     isActive: true,
   }).returning()

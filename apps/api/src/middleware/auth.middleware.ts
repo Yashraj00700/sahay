@@ -26,7 +26,7 @@ declare module 'fastify' {
       aiPersonaName: string
       aiLanguage: string
       aiTone: string
-      aiConfidenceThreshold: number | null
+      aiConfidenceThreshold: string
     }
   }
 }
@@ -86,7 +86,7 @@ export async function requireAuth(
       aiPersonaName: tenant.aiPersonaName ?? 'Sahay',
       aiLanguage: tenant.aiLanguage ?? 'hinglish',
       aiTone: tenant.aiTone ?? 'warm',
-      aiConfidenceThreshold: tenant.aiConfidenceThreshold ?? 0.75,
+      aiConfidenceThreshold: tenant.aiConfidenceThreshold ?? '0.75',
     }
   } catch (err) {
     return reply.status(401).send({

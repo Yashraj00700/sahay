@@ -1,5 +1,4 @@
 import { Redis } from 'ioredis'
-import { logger } from './logger'
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379'
 
@@ -8,21 +7,14 @@ export const redis = new Redis(redisUrl, {
   maxRetriesPerRequest: 3,
   enableReadyCheck: true,
   lazyConnect: true,
-  enableOfflineQueue: false,
-  retryStrategy: (times) => Math.min(times * 50, 2000),
 })
 
 redis.on('error', (err) => {
-  logger.error({ err }, 'Redis connection error')
+  console.error('Redis connection error:', err)
 })
 
 redis.on('connect', () => {
-  logger.info('Redis connected')
-})
-
-// Eagerly connect so startup failures are surfaced immediately
-redis.connect().catch((err) => {
-  logger.error({ err }, 'Redis initial connect failed')
+  console.log('✅ Redis connected')
 })
 
 // ─── Typed Redis Helpers ──────────────────────────────────────

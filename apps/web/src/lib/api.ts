@@ -5,27 +5,30 @@ import { useAuthStore } from '../store/auth.store'
 export const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
-  // withCredentials ensures the browser sends httpOnly cookies (accessToken, refreshToken)
-  // on every request, including cross-origin requests to the API.
-  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
-// No request interceptor needed — the browser automatically attaches the httpOnly
-// accessToken cookie on every request. Manual Authorization header injection is removed.
+// Request interceptor — add Authorization header
+api.interceptors.request.use((config) => {
+  const token = useAuthStore.getState().token
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
 
-// Response interceptor — handle silent token refresh on 401
+// Response interceptor — handle token refresh on 401
 let isRefreshing = false
-let refreshSubscribers: Array<() => void> = []
+let refreshSubscribers: Array<(token: string) => void> = []
 
-function subscribeTokenRefresh(callback: () => void) {
+function subscribeTokenRefresh(callback: (token: string) => void) {
   refreshSubscribers.push(callback)
 }
 
-function onTokenRefreshed() {
-  refreshSubscribers.forEach(callback => callback())
+function onTokenRefreshed(token: string) {
+  refreshSubscribers.forEach(callback => callback(token))
   refreshSubscribers = []
 }
 
@@ -36,9 +39,10 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        // Queue request until the refresh completes; cookies will be updated by then
+        // Queue request until token is refreshed
         return new Promise((resolve) => {
-          subscribeTokenRefresh(() => {
+          subscribeTokenRefresh((token: string) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`
             resolve(api(originalRequest))
           })
         })
@@ -47,15 +51,21 @@ api.interceptors.response.use(
       originalRequest._retry = true
       isRefreshing = true
 
-      try {
-        // POST to /api/auth/refresh — the httpOnly refreshToken cookie is sent
-        // automatically by the browser (no token read from store required).
-        await axios.post('/api/auth/refresh', {}, { withCredentials: true })
+      const refreshToken = useAuthStore.getState().refreshToken
+      if (!refreshToken) {
+        useAuthStore.getState().logout()
+        return Promise.reject(error)
+      }
 
-        onTokenRefreshed()
+      try {
+        const response = await axios.post('/api/auth/refresh', { refreshToken })
+        const { token } = response.data as { token: string }
+
+        useAuthStore.getState().setToken(token)
+        onTokenRefreshed(token)
         isRefreshing = false
 
-        // Retry the original request; the new accessToken cookie is now set
+        originalRequest.headers.Authorization = `Bearer ${token}`
         return api(originalRequest)
       } catch {
         useAuthStore.getState().logout()

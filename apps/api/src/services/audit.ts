@@ -1,5 +1,4 @@
 import { db, auditLogs } from '@sahay/db'
-import { logger } from '../lib/logger'
 
 interface AuditActionParams {
   tenantId?: string
@@ -36,6 +35,6 @@ export async function auditAction(params: AuditActionParams): Promise<void> {
     })
   } catch (err) {
     // Audit log failures should never crash the main request
-    logger.error({ err }, 'Failed to write audit log')
+    console.error('Failed to write audit log:', err)
   }
 }

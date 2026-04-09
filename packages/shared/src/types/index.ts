@@ -206,23 +206,6 @@ export interface KBChunk {
   isActive: boolean
 }
 
-// ─── Agent Performance / Leaderboard ──────────────────────────
-export interface AgentPerformanceStat {
-  agentId: string
-  agentName: string
-  agentAvatar: string | null
-  conversationsHandled: number
-  avgResponseTimeSec: number | null
-  csatAvgRating: number | null
-  resolutionRate: number
-  totalMessages: number
-}
-
-export interface AgentPerformanceResponse {
-  data: AgentPerformanceStat[]
-  period: { startDate: string; endDate: string }
-}
-
 // ─── Analytics ────────────────────────────────────────────────
 export interface AnalyticsOverview {
   period: '1d' | '7d' | '30d'
@@ -292,7 +275,7 @@ export interface ApiError {
 
 export interface AuthTokens {
   token: string
-  // refreshToken is no longer returned in the response body — it is set as an httpOnly cookie.
+  refreshToken: string
   expiresIn: number
 }
 
