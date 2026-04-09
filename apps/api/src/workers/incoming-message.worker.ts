@@ -1,7 +1,10 @@
-import { db, customers, conversations, messages } from '@sahay/db'
-import { eq, and } from 'drizzle-orm'
+import { db, customers, conversations, messages, tenants } from '@sahay/db'
+import { eq, and, desc } from 'drizzle-orm'
 import { aiRespondQueue, type IncomingWhatsAppJob } from '../lib/queues'
 import { normalizeIndianPhone } from '@sahay/shared'
+import { logger } from '../lib/logger'
+import { safeDecrypt } from '../lib/encryption'
+import { transcribeWhatsAppAudio } from '../services/ai/transcription'
 
 export async function processIncomingWhatsApp(job: IncomingWhatsAppJob): Promise<void> {
   const { tenantId, from, messageId, timestamp, type, text, image, audio } = job
@@ -37,7 +40,7 @@ export async function processIncomingWhatsApp(job: IncomingWhatsAppJob): Promise
       eq(conversations.channel, 'whatsapp'),
       eq(conversations.status, 'open')
     ),
-    // orderBy: desc(conversations.createdAt) -- get most recent
+    orderBy: desc(conversations.createdAt), // get most recent (fixes P1-7: arbitrary row without ordering)
   })
 
   const sessionExpired = conversation?.sessionExpiresAt
@@ -66,14 +69,33 @@ export async function processIncomingWhatsApp(job: IncomingWhatsAppJob): Promise
   if (!conversation) throw new Error('Failed to create conversation')
 
   // 3. Store the message
-  const msgContent = type === 'text' ? text?.body ?? '' : null
+  let msgContent: string | null = type === 'text' ? text?.body ?? '' : null
+  let msgContentType: string = type
   const isMedia = ['image', 'audio', 'video', 'document'].includes(type)
+
+  // Transcribe audio/voice notes via Whisper
+  if ((type === 'audio' || type === 'voice') && audio?.id) {
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(tenants.id, tenantId),
+      columns: { whatsappToken: true },
+    })
+    const waToken = tenant?.whatsappToken ? safeDecrypt(tenant.whatsappToken) : null
+    const fallbackToken = waToken ?? process.env.WA_SYSTEM_ACCESS_TOKEN ?? ''
+
+    const transcript = await transcribeWhatsAppAudio(audio.id, fallbackToken)
+    if (transcript) {
+      msgContent = '[Voice note] ' + transcript
+      msgContentType = 'voice_transcript'
+    } else {
+      msgContent = '[Voice note]'
+    }
+  }
 
   const [storedMessage] = await db.insert(messages).values({
     conversationId: conversation.id,
     tenantId,
     senderType: 'customer',
-    contentType: type as any,
+    contentType: msgContentType as any,
     content: msgContent,
     mediaMimeType: image?.mime_type ?? audio?.mime_type,
     channelMessageId: messageId,
@@ -82,15 +104,12 @@ export async function processIncomingWhatsApp(job: IncomingWhatsAppJob): Promise
     sentAt: new Date(parseInt(timestamp) * 1000),
   }).returning()
 
-  // 4. Update conversation turn count
-  await db.update(conversations)
-    .set({
-      turnCount: (conversation.turnCount ?? 0) + 1,
-      updatedAt: new Date(),
-    })
-    .where(eq(conversations.id, conversation.id))
+  // NOTE (P1-5): turnCount / unresolvedTurns is intentionally NOT incremented here.
+  // agent.ts owns the increment because it has full context (e.g. it knows whether
+  // the AI actually responded). Incrementing here as well was causing escalation to
+  // trigger at half the intended threshold.
 
-  // 5. Queue AI response (AI pipeline will decide routing)
+  // 4. Queue AI response (AI pipeline will decide routing)
   await aiRespondQueue.add('respond', {
     tenantId,
     conversationId: conversation.id,
@@ -100,7 +119,7 @@ export async function processIncomingWhatsApp(job: IncomingWhatsAppJob): Promise
     priority: customer.tier === 'vip' ? 0 : 1,
   })
 
-  console.info(
+  logger.info(
     `[WA Worker] Message stored: conv=${conversation.id} msg=${storedMessage.id} type=${type}`
   )
 }

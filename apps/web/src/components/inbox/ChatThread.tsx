@@ -18,6 +18,8 @@ import { ReplyComposer } from './ReplyComposer'
 
 interface ChatThreadProps {
   conversationId: string
+  /** Pass a mutable ref; it will be forwarded to ReplyComposer so the parent can call focus() */
+  replyFocusRef?: React.MutableRefObject<(() => void) | null>
 }
 
 // ─── Channel Badge ────────────────────────────────────────────────────────────
@@ -125,12 +127,14 @@ function ThreadSkeleton() {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ChatThread({ conversationId }: ChatThreadProps) {
+export function ChatThread({ conversationId, replyFocusRef }: ChatThreadProps) {
   const agent = useAuthStore(s => s.agent)
   const queryClient = useQueryClient()
   const bottomRef = useRef<HTMLDivElement>(null)
   const [aiTyping, setAiTyping] = useState(false)
   const [agentTyping, setAgentTyping] = useState(false)
+  // Text to append to the reply composer (used by product recommendation "Add to reply")
+  const [composerAppendText, setComposerAppendText] = useState<string | null>(null)
 
   // Fetch conversation detail
   const { data: conversation } = useQuery<Conversation>({
@@ -213,7 +217,13 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
   }, [aiSuggestion, sendMutation])
 
   const handleEditSuggestion = useCallback(() => {
-    // Pass suggestion text back to composer — handled by parent or local state
+    if (aiSuggestion?.suggestion) {
+      setComposerAppendText(aiSuggestion.suggestion)
+    }
+  }, [aiSuggestion])
+
+  const handleAddToReply = useCallback((text: string) => {
+    setComposerAppendText(text)
   }, [])
 
   return (
@@ -335,6 +345,7 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
             onFeedback={(positive) => {
               api.post(`/ai/feedback`, { conversationId, positive })
             }}
+            onAddToReply={handleAddToReply}
           />
         )}
       </AnimatePresence>
@@ -345,6 +356,9 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
         channel={conversation?.channel ?? 'webchat'}
         onSend={(content) => sendMutation.mutate(content)}
         customerName={conversation?.customer?.name}
+        focusRef={replyFocusRef}
+        appendText={composerAppendText}
+        onAppendConsumed={() => setComposerAppendText(null)}
       />
     </div>
   )

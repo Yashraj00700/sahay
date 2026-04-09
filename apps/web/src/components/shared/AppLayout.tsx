@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageSquare, LayoutDashboard, BarChart3,
-  BookOpen, Settings, LogOut, Wifi
+  BookOpen, Settings, LogOut, Wifi, RotateCcw
 } from 'lucide-react'
 import { useAuthStore } from '../../store/auth.store'
 import { useInboxStore } from '../../store/inbox.store'
@@ -13,6 +13,7 @@ const navItems = [
   { path: '/inbox', icon: MessageSquare, label: 'Inbox' },
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { path: '/returns', icon: RotateCcw, label: 'Returns' },
   { path: '/knowledge-base', icon: BookOpen, label: 'Knowledge' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ]

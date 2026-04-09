@@ -7,6 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { SentimentLevel, EmotionTag } from '@sahay/shared'
+import { logger } from '../../lib/logger'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -346,7 +347,7 @@ Analyse sentiment and return JSON only.`
       source: 'ai',
     }
   } catch (err) {
-    console.error('[sentiment] Claude API error or parse failure:', err)
+    logger.error({ err }, '[sentiment] Claude API error or parse failure')
 
     // Fall back to heuristic result
     return {

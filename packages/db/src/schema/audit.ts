@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, text, timestamp, jsonb, inet, index,
+  pgTable, uuid, text, boolean, timestamp, jsonb, inet, index,
 } from 'drizzle-orm/pg-core'
 import { tenants } from './tenants'
 
@@ -40,13 +40,13 @@ export const consentRecords = pgTable('consent_records', {
   customerId: uuid('customer_id').notNull(),
   consentType: text('consent_type').notNull(), // wa_support|wa_marketing|data_processing
   channel: text('channel').notNull(),           // whatsapp|website|shopify_checkout
-  granted: text('granted').notNull(),           // 'true'|'false' (text for immutability)
+  granted: boolean('granted').notNull(),
   consentText: text('consent_text').notNull(),  // exact text shown to user
   consentVersion: text('consent_version').notNull(),
   // Proof
   ipAddress: inet('ip_address'),
   deviceInfo: text('device_info'),
-  doubleOptIn: text('double_opt_in').default('false'),
+  doubleOptIn: boolean('double_opt_in').default(false),
   doubleOptInAt: timestamp('double_opt_in_at', { withTimezone: true }),
   // Revocation
   revokedAt: timestamp('revoked_at', { withTimezone: true }),

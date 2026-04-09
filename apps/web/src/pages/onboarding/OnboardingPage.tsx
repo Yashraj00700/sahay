@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { Check, ChevronRight, Store, Bot, Plug, Loader2 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { api } from '../../lib/api'
 import { cn } from '../../lib/utils'
 
@@ -285,7 +286,7 @@ function StepConnectChannels({
 
       <p className="text-xs text-text-secondary text-center">
         Your webhook URL is <code className="bg-surface px-1.5 py-0.5 rounded text-text-primary">
-          {window.location.origin.replace(':4000', ':3001')}/webhooks/whatsapp
+          {`${import.meta.env.VITE_API_URL || window.location.origin}/webhooks/whatsapp`}
         </code>
       </p>
     </div>
@@ -326,7 +327,10 @@ export function OnboardingPage() {
 
   const completeMutation = useMutation({
     mutationFn: () =>
-      api.post('/settings/onboarding', { brand, ai, channels }).catch(() => ({})),
+      api.post('/settings/onboarding', { brand, ai, channels }).catch((err) => {
+        toast.error('Setup failed. Please try again.')
+        throw err  // re-throw so mutation knows it failed
+      }),
     onSuccess: () => navigate('/'),
   })
 

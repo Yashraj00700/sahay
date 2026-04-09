@@ -7,63 +7,37 @@ import {
 import {
   MessageSquare, Bot, Clock, Star,
   TrendingUp, TrendingDown, RefreshCw,
-  IndianRupee, Zap,
+  IndianRupee, Zap, Users,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { cn } from '../../lib/utils'
-import type { AnalyticsOverview } from '@sahay/shared'
+import type { AnalyticsOverview, AgentPerformanceStat } from '@sahay/shared'
 
-// ─── Mock fallback (matches AnalyticsOverview from @sahay/shared exactly) ───
-
-function getMockOverview(period: string): AnalyticsOverview {
-  const m = period === '1d' ? 1 : period === '7d' ? 7 : 30
-  return {
-    period: period as '1d' | '7d' | '30d',
-    totalConversations: 47 * m,
-    newConversations: 31 * m,
-    resolvedConversations: 38 * m,
-    aiResolved: 35 * m,
-    aiResolutionRate: 73.4,
-    avgFirstResponseSeconds: 34,
-    avgResolutionSeconds: 420,
-    avgCsat: 4.6,
-    csatResponses: 18 * m,
-    codConversions: 4 * m,
-    codConversionRevenue: 12800 * m,
-    channelBreakdown: {
-      whatsapp: Math.round(0.55 * 47 * m),
-      instagram: Math.round(0.30 * 47 * m),
-      webchat: Math.round(0.15 * 47 * m),
-      email: 0,
-    },
-    trends: {
-      conversationsDelta: 12,
-      aiResolutionDelta: 3.1,
-      csatDelta: 0.1,
-    },
-  }
-}
+// ─── Deterministic time-series mock (no Math.random) ─────────────────────────
 
 function getMockTimeSeries(period: string) {
   if (period === '1d') {
     return Array.from({ length: 12 }, (_, i) => ({
       label: `${(i * 2).toString().padStart(2, '0')}:00`,
-      conversations: Math.floor(Math.random() * 8 + 2),
-      aiResolved: Math.floor(Math.random() * 6 + 1),
+      conversations: 2 + (i * 3) % 9,
+      aiResolved: 1 + (i * 2) % 7,
     }))
   }
   if (period === '7d') {
-    return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => ({
+    return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => ({
       label: d,
-      conversations: Math.floor(Math.random() * 60 + 30),
-      aiResolved: Math.floor(Math.random() * 45 + 20),
+      conversations: 30 + (i * 11) % 31,
+      aiResolved: 20 + (i * 8) % 26,
     }))
   }
-  return Array.from({ length: 30 }, (_, i) => ({
-    label: `Apr ${i + 1}`,
-    conversations: Math.floor(Math.random() * 60 + 20),
-    aiResolved: Math.floor(Math.random() * 45 + 14),
-  }))
+  return Array.from({ length: 30 }, (_, i) => {
+    const date = new Date(Date.now() - (29 - i) * 86400000)
+    return {
+      label: date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+      conversations: 20 + (i * 7) % 41,
+      aiResolved: 14 + (i * 5) % 32,
+    }
+  })
 }
 
 const CHANNEL_COLORS: Record<string, string> = {
@@ -78,6 +52,172 @@ const PERIOD_OPTIONS = [
   { value: '7d', label: '7 Days' },
   { value: '30d', label: '30 Days' },
 ]
+
+const LEADERBOARD_PERIOD_OPTIONS = [
+  { value: 'week', label: 'This Week' },
+  { value: 'month', label: 'This Month' },
+  { value: '30d', label: 'Last 30 Days' },
+]
+
+const RANK_ICONS: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' }
+
+// ─── Team Leaderboard ─────────────────────────────────────────────────────────
+
+function AgentAvatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+  const initials = name
+    .split(' ')
+    .map(p => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+      />
+    )
+  }
+  return (
+    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+      <span className="text-xs font-semibold text-primary">{initials}</span>
+    </div>
+  )
+}
+
+function TeamLeaderboard() {
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState<'week' | 'month' | '30d'>('week')
+
+  const { data, isLoading } = useQuery<{ data: AgentPerformanceStat[] }>({
+    queryKey: ['team', 'performance', leaderboardPeriod],
+    queryFn: async () => {
+      const r = await api.get<{ data: AgentPerformanceStat[] }>('/team/performance', {
+        params: { period: leaderboardPeriod === '30d' ? undefined : leaderboardPeriod,
+                  startDate: leaderboardPeriod === '30d'
+                    ? new Date(Date.now() - 29 * 86400000).toISOString().split('T')[0]
+                    : undefined },
+      })
+      return r.data
+    },
+    staleTime: 60_000,
+  })
+
+  const rows = data?.data ?? []
+
+  return (
+    <div className="bg-surface border border-border rounded-xl p-5">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary">Team Performance</h3>
+          <p className="text-xs text-text-secondary mt-0.5">Agent leaderboard ranked by conversations handled</p>
+        </div>
+        <div className="flex bg-background border border-border rounded-lg p-1 gap-0.5">
+          {LEADERBOARD_PERIOD_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setLeaderboardPeriod(opt.value as 'week' | 'month' | '30d')}
+              className={cn(
+                'px-3 py-1.5 rounded text-xs font-medium transition-colors',
+                leaderboardPeriod === opt.value
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-text-secondary hover:text-text-primary',
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-12 bg-border/40 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Users className="w-10 h-10 text-text-secondary/40 mb-3" />
+          <p className="text-sm font-medium text-text-secondary">No agent data for this period</p>
+          <p className="text-xs text-text-secondary/70 mt-1">Data appears once agents handle conversations</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left pb-3 pr-4 text-xs font-medium text-text-secondary uppercase tracking-wide w-12">Rank</th>
+                <th className="text-left pb-3 pr-4 text-xs font-medium text-text-secondary uppercase tracking-wide">Agent</th>
+                <th className="text-right pb-3 pr-4 text-xs font-medium text-text-secondary uppercase tracking-wide">Conversations</th>
+                <th className="text-right pb-3 pr-4 text-xs font-medium text-text-secondary uppercase tracking-wide">Avg Response</th>
+                <th className="text-right pb-3 pr-4 text-xs font-medium text-text-secondary uppercase tracking-wide">CSAT</th>
+                <th className="text-right pb-3 text-xs font-medium text-text-secondary uppercase tracking-wide">Resolution</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((agent, idx) => {
+                const rank = idx + 1
+                const rankIcon = RANK_ICONS[rank]
+                const respTime = agent.avgResponseTimeSec
+                const respFormatted = respTime === null
+                  ? '—'
+                  : respTime >= 60
+                    ? `${Math.floor(respTime / 60)}m ${Math.round(respTime % 60)}s`
+                    : `${Math.round(respTime)}s`
+
+                return (
+                  <tr key={agent.agentId} className="hover:bg-background/50 transition-colors">
+                    <td className="py-3 pr-4">
+                      <span className="text-base leading-none" aria-label={`Rank ${rank}`}>
+                        {rankIcon ?? (
+                          <span className="text-xs font-semibold text-text-secondary tabular-nums">#{rank}</span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <div className="flex items-center gap-2.5">
+                        <AgentAvatar name={agent.agentName} avatarUrl={agent.agentAvatar} />
+                        <span className="font-medium text-text-primary truncate max-w-[140px]">{agent.agentName}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 pr-4 text-right tabular-nums font-semibold text-text-primary">
+                      {agent.conversationsHandled.toLocaleString('en-IN')}
+                    </td>
+                    <td className="py-3 pr-4 text-right tabular-nums text-text-secondary">
+                      {respFormatted}
+                    </td>
+                    <td className="py-3 pr-4 text-right">
+                      {agent.csatAvgRating !== null ? (
+                        <span className="inline-flex items-center gap-1 tabular-nums text-text-primary font-medium">
+                          <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                          {agent.csatAvgRating.toFixed(1)}
+                        </span>
+                      ) : (
+                        <span className="text-text-secondary">—</span>
+                      )}
+                    </td>
+                    <td className="py-3 text-right">
+                      <span className={cn(
+                        'text-xs font-medium tabular-nums',
+                        agent.resolutionRate >= 80 ? 'text-emerald-600'
+                        : agent.resolutionRate >= 50 ? 'text-amber-600'
+                        : 'text-rose-500',
+                      )}>
+                        {agent.resolutionRate.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 
@@ -154,12 +294,8 @@ export function AnalyticsPage() {
   const { data: overview, isLoading } = useQuery<AnalyticsOverview>({
     queryKey: ['analytics', 'overview', period, refreshKey],
     queryFn: async () => {
-      try {
-        const r = await api.get<AnalyticsOverview>('/analytics/overview', { params: { period } })
-        return r.data
-      } catch {
-        return getMockOverview(period)
-      }
+      const r = await api.get<AnalyticsOverview>('/analytics/overview', { params: { period } })
+      return r.data
     },
     staleTime: 60_000,
   })
@@ -455,6 +591,9 @@ export function AnalyticsPage() {
             ))}
           </div>
         )}
+
+        {/* ── Team Performance Leaderboard ── */}
+        <TeamLeaderboard />
 
       </div>
     </div>

@@ -1,10 +1,14 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
+import { Resend } from 'resend'
 import { db, agents, tenants } from '@sahay/db'
 import { eq, and } from 'drizzle-orm'
 import { requireAuth } from '../../middleware/auth.middleware'
 import { auditAction } from '../../services/audit'
+import { redis } from '../../lib/redis'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 const LoginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -23,7 +27,19 @@ const ResetPasswordSchema = z.object({
 export const authRoutes: FastifyPluginAsync = async (app) => {
 
   // POST /api/auth/login
-  app.post('/login', async (request, reply) => {
+  app.post('/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+        errorResponseBuilder: () => ({
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: 'Too many login attempts. Please try again in 1 minute.'
+        })
+      }
+    }
+  }, async (request, reply) => {
     const body = LoginSchema.safeParse(request.body)
     if (!body.success) {
       return reply.status(400).send({
@@ -106,9 +122,29 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       userAgent: request.headers['user-agent'],
     })
 
+    const isProd = process.env.NODE_ENV === 'production'
+
+    // Set access token as httpOnly cookie (15 minutes)
+    reply.setCookie('accessToken', token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'strict',
+      maxAge: 15 * 60,
+      path: '/',
+    })
+
+    // Set refresh token as httpOnly cookie (30 days), scoped to refresh endpoint
+    reply.setCookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60,
+      path: '/api/auth/refresh',
+    })
+
+    // Return agent/tenant profile in body; token included for backward compatibility during transition
     return reply.send({
       token,
-      refreshToken,
       expiresIn: 3600,
       agent: {
         id: agent.id,
@@ -132,13 +168,23 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   // POST /api/auth/refresh
   app.post('/refresh', async (request, reply) => {
-    const body = z.object({ refreshToken: z.string() }).safeParse(request.body)
-    if (!body.success) {
+    const body = z.object({ refreshToken: z.string().optional() }).safeParse(request.body)
+
+    // Accept refresh token from cookie (httpOnly) or request body (backward compat)
+    const refreshToken = (body.success ? body.data?.refreshToken : undefined) ?? request.cookies?.refreshToken
+
+    if (!refreshToken) {
       return reply.status(400).send({ statusCode: 400, error: 'Bad Request', message: 'refreshToken is required' })
     }
 
     try {
-      const payload = app.jwt.verify(body.data.refreshToken) as {
+
+      const blocked = await redis.get(`blocklist:refresh:${refreshToken}`)
+      if (blocked) {
+        return reply.status(401).send({ statusCode: 401, error: 'Unauthorized', message: 'Token revoked' })
+      }
+
+      const payload = app.jwt.verify(refreshToken) as {
         agentId: string; tenantId: string; role: string; email: string; type?: string
       }
 
@@ -150,6 +196,17 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         { agentId: payload.agentId, tenantId: payload.tenantId, role: payload.role, email: payload.email },
         { expiresIn: process.env.JWT_EXPIRES_IN ?? '1h' }
       )
+
+      await redis.setex(`blocklist:refresh:${refreshToken}`, 30 * 24 * 60 * 60, '1')
+
+      // Rotate access token cookie
+      reply.setCookie('accessToken', newToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 15 * 60,
+        path: '/',
+      })
 
       return reply.send({ token: newToken, expiresIn: 3600 })
     } catch {
@@ -163,6 +220,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       .set({ isOnline: false, updatedAt: new Date() })
       .where(eq(agents.id, request.agent.id))
 
+    // Clear auth cookies
+    reply.clearCookie('accessToken', { path: '/' })
+    reply.clearCookie('refreshToken', { path: '/api/auth/refresh' })
+
     return reply.send({ success: true })
   })
 
@@ -175,7 +236,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   })
 
   // POST /api/auth/forgot-password
-  app.post('/forgot-password', async (request, reply) => {
+  app.post('/forgot-password', {
+    config: {
+      rateLimit: {
+        max: 3,
+        timeWindow: '15 minutes',
+        errorResponseBuilder: () => ({
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: 'Too many password reset attempts. Please try again in 15 minutes.'
+        })
+      }
+    }
+  }, async (request, reply) => {
     const body = ForgotPasswordSchema.safeParse(request.body)
     if (!body.success) {
       return reply.status(400).send({ statusCode: 400, error: 'Bad Request', message: 'Valid email is required' })
@@ -198,8 +271,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         })
         .where(eq(agents.id, agent.id))
 
-      // TODO: Send email via Resend
-      // await sendPasswordResetEmail(agent.email, agent.name, resetToken)
+      await resend.emails.send({
+        from: 'Sahay <noreply@sahay.ai>',
+        to: agent.email,
+        subject: 'Reset your Sahay password',
+        html: `<p>Hi ${agent.name},</p><p>Click <a href="${process.env.WEB_URL}/reset-password?token=${resetToken}">here</a> to reset your password. Link expires in 1 hour.</p>`,
+      })
       request.log.info({ agentId: agent.id, email: agent.email }, 'Password reset token generated')
     }
 
@@ -219,6 +296,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const agent = await db.query.agents.findFirst({
       where: and(
         eq(agents.resetToken, body.data.token),
+        eq(agents.isActive, true),
       ),
     })
 

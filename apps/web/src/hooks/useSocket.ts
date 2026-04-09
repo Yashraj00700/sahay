@@ -9,17 +9,17 @@ import type { Conversation, Message } from '@sahay/shared'
 let socket: Socket | null = null
 
 export function useSocket() {
-  const { token, agent, tenant } = useAuthStore()
+  const { socketToken, agent, tenant } = useAuthStore()
   const queryClient = useQueryClient()
   const { setAgentViewing, removeAgentViewing } = useInboxStore()
   const isConnected = useRef(false)
 
   useEffect(() => {
-    if (!token || !agent || !tenant) return
+    if (!socketToken || !agent || !tenant) return
     if (isConnected.current) return
 
     socket = io('/', {
-      auth: { token },
+      auth: { token: socketToken },
       transports: ['websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
@@ -28,12 +28,19 @@ export function useSocket() {
 
     socket.on('connect', () => {
       isConnected.current = true
-      console.log('🔌 Socket.io connected')
+      if (Notification.permission === 'default') {
+        Notification.requestPermission()
+      }
     })
 
     socket.on('disconnect', () => {
       isConnected.current = false
-      console.log('🔌 Socket.io disconnected')
+    })
+
+    socket.on('auth:expired', () => {
+      // Clear auth state and redirect to login
+      useAuthStore.getState().logout()
+      window.location.href = '/login'
     })
 
     // ─── New conversation arrived ─────────────────────────
@@ -84,8 +91,27 @@ export function useSocket() {
     socket.on('message:status', ({ messageId, status, timestamp }: {
       messageId: string; status: string; timestamp: string
     }) => {
-      // Update message status in all conversations (we don't know which conversation it's in)
-      // This is handled by the conversation queries automatically
+      // Update the message in all cached message lists (keyed as ['conversations', id, 'messages'])
+      queryClient.setQueriesData(
+        { queryKey: ['conversations'] },
+        (oldData: any) => {
+          if (!oldData) return oldData
+          // Only operate on arrays (message lists), not conversation objects/lists
+          const messages = Array.isArray(oldData) ? oldData : oldData.data || oldData.messages
+          if (!Array.isArray(messages)) return oldData
+          const updated = messages.map((msg: any) =>
+            msg.id === messageId
+              ? {
+                  ...msg,
+                  channelStatus: status,
+                  deliveredAt: status === 'delivered' ? timestamp : msg.deliveredAt,
+                  readAt: status === 'read' ? timestamp : msg.readAt,
+                }
+              : msg
+          )
+          return Array.isArray(oldData) ? updated : { ...oldData, data: updated }
+        }
+      )
     })
 
     // ─── AI suggestion ready ──────────────────────────────
@@ -99,6 +125,7 @@ export function useSocket() {
     })
 
     // ─── Agent viewing collision ──────────────────────────
+    const viewingTimers: ReturnType<typeof setTimeout>[] = []
     socket.on('agent:viewing', ({ agentId, agentName, conversationId }: {
       agentId: string; agentName: string; conversationId: string
     }) => {
@@ -106,17 +133,31 @@ export function useSocket() {
       setAgentViewing(conversationId, agentId, agentName)
 
       // Auto-remove after 30s of no update
-      setTimeout(() => {
+      const timerId = setTimeout(() => {
         removeAgentViewing(conversationId, agentId)
       }, 30000)
+      viewingTimers.push(timerId)
+    })
+
+    // ─── Agent typing indicator ───────────────────────────
+    socket.on('agent:typing', ({ agentId, conversationId, isTyping }: {
+      agentId: string; conversationId: string; isTyping: boolean
+    }) => {
+      useInboxStore.getState().setTypingIndicator(conversationId, agentId, isTyping)
+    })
+
+    // ─── Bulk conversation update ─────────────────────────
+    socket.on('conversations:bulk_updated', () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all(tenant.id) })
     })
 
     return () => {
+      viewingTimers.forEach(clearTimeout)
       socket?.disconnect()
       socket = null
       isConnected.current = false
     }
-  }, [token, agent?.id, tenant?.id])
+  }, [socketToken, agent?.id, tenant?.id])
 
   // Emit helpers
   const emitTypingStart = useCallback((conversationId: string) => {
@@ -138,4 +179,14 @@ export function useSocket() {
     emitTypingStop,
     emitViewing,
   }
+}
+
+// HMR cleanup — disconnect socket before Vite hot-replaces this module
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    if (socket) {
+      socket.disconnect()
+      socket = null
+    }
+  })
 }

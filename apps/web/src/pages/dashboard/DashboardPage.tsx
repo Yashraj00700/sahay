@@ -67,7 +67,7 @@ function getGreeting(name: string): string {
   return `Good evening, ${firstName}! 🙏`
 }
 
-// ─── Mock chart data (7 days volume) ─────────────────────────────────────────
+// ─── Deterministic chart data (7 days volume) ────────────────────────────────
 
 function buildChartData() {
   const today = new Date()
@@ -75,7 +75,7 @@ function buildChartData() {
     const date = subDays(today, 6 - i)
     return {
       day: format(date, 'EEE'),
-      conversations: Math.floor(Math.random() * 40 + 10),
+      conversations: 10 + (i * 9) % 41,
     }
   })
 }

@@ -19,6 +19,17 @@ const conn = getRedisConnection()
 // ─── Queue Definitions ────────────────────────────────────────
 // NOTE: BullMQ v5+ does not allow colons in queue names — use hyphens
 
+// Dead Letter Queue — jobs land here after exhausting all retry attempts.
+// removeOnFail: false on critical queues ensures failed jobs are visible and
+// forwarded here rather than silently dropped.
+export const dlqQueue = new Queue('dlq', {
+  connection: conn,
+  defaultJobOptions: {
+    removeOnComplete: { count: 1000 },
+    removeOnFail: false,
+  },
+})
+
 // Incoming messages from channels
 export const incomingWhatsAppQueue = new Queue('incoming-whatsapp', {
   connection: conn,
@@ -26,7 +37,7 @@ export const incomingWhatsAppQueue = new Queue('incoming-whatsapp', {
     attempts: 3,
     backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { count: 100 },
-    removeOnFail: { count: 500 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -36,7 +47,7 @@ export const incomingInstagramQueue = new Queue('incoming-instagram', {
     attempts: 3,
     backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { count: 100 },
-    removeOnFail: { count: 500 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -45,6 +56,7 @@ export const incomingWebchatQueue = new Queue('incoming-webchat', {
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 1000 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -52,9 +64,10 @@ export const incomingWebchatQueue = new Queue('incoming-webchat', {
 export const aiRespondQueue = new Queue('ai-respond', {
   connection: conn,
   defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'fixed', delay: 2000 },
+    attempts: 4,
+    backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { count: 200 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -64,6 +77,7 @@ export const aiEmbedQueue = new Queue('ai-embed', {
     attempts: 3,
     backoff: { type: 'exponential', delay: 2000 },
     removeOnComplete: { count: 100 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -73,6 +87,7 @@ export const outgoingWhatsAppQueue = new Queue('outgoing-whatsapp', {
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 2000 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -81,6 +96,7 @@ export const outgoingInstagramQueue = new Queue('outgoing-instagram', {
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 2000 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -91,6 +107,7 @@ export const shopifySyncQueue = new Queue('shopify-sync', {
     attempts: 5,
     backoff: { type: 'exponential', delay: 5000 },
     removeOnComplete: { count: 100 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -100,6 +117,18 @@ export const notificationsQueue = new Queue('notifications-push', {
   defaultJobOptions: {
     attempts: 2,
     backoff: { type: 'fixed', delay: 5000 },
+    removeOnFail: false, // keep for DLQ forwarding
+  },
+})
+
+// CSAT survey dispatch (triggered when a conversation is resolved)
+export const csatQueue = new Queue('csat-survey', {
+  connection: conn,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { count: 500 },
+    removeOnFail: false,
   },
 })
 
@@ -109,6 +138,7 @@ export const proactiveQueue = new Queue('proactive-messages', {
   defaultJobOptions: {
     attempts: 2,
     backoff: { type: 'exponential', delay: 10000 },
+    removeOnFail: false, // keep for DLQ forwarding
   },
 })
 
@@ -139,10 +169,12 @@ export interface AIRespondJob {
 
 export interface ShopifySyncJob {
   tenantId: string
-  type: 'full' | 'product' | 'order' | 'customer'
-  resourceId?: string   // shopify ID for incremental syncs
-  shopifyDomain: string
-  accessToken: string
+  type: 'full' | 'product' | 'order' | 'customer' | 'fulfillment'
+  resourceId?: string        // shopify ID for polling-style incremental syncs
+  shopifyDomain?: string     // used for polling syncs
+  accessToken?: string       // used for polling syncs
+  // Webhook-push fields (set when enqueued from webhook handler)
+  data?: Record<string, unknown>  // raw Shopify webhook payload
 }
 
 export interface EmbedJob {
@@ -158,4 +190,62 @@ export interface OutgoingWhatsAppJob {
   message: object       // WhatsApp message object
   conversationId: string
   messageId: string
+}
+
+export interface OutgoingInstagramJob {
+  tenantId: string
+  recipientIgId: string // Instagram-scoped user ID
+  message: object       // { text: string } or { attachment: {...} }
+  conversationId: string
+  messageId: string
+}
+
+export interface NotificationsJob {
+  tenantId: string
+  agentId: string
+  type: 'new_conversation' | 'escalation' | 'mention'
+  conversationId: string
+}
+
+export interface ProactiveJob {
+  tenantId: string
+  to: string            // recipient phone in E.164
+  templateName: string  // approved WA template name
+  languageCode?: string // e.g. 'en' | 'en_IN' | 'hi' — defaults to 'en'
+  components?: object[] // WhatsApp template parameter components
+  customerId?: string   // customers.id for conversation linking
+  conversationId?: string
+}
+
+export interface IncomingInstagramJob {
+  tenantId: string
+  igUserId: string      // Instagram-scoped user ID of the sender
+  messageId: string     // Instagram message ID from webhook
+  timestamp: string     // unix timestamp string
+  type: string          // text|image|video|audio|sticker|story_mention
+  text?: { body: string }
+  attachments?: Array<{ type: string; url: string }>
+  rawPayload: object
+}
+
+export interface CsatJob {
+  tenantId:       string
+  conversationId: string
+  customerId:     string
+  customerPhone:  string   // E.164 — the WhatsApp number to send the survey to
+  customerName:   string
+}
+
+export interface IncomingWebchatJob {
+  tenantId: string
+  sessionId: string     // browser session / visitor ID
+  visitorId?: string    // optional visitor identifier
+  customerId?: string   // customers.id if already identified
+  messageId: string     // client-generated idempotency ID
+  type: string          // text|image|file
+  text?: { body: string }
+  mediaUrl?: string
+  mediaMimeType?: string
+  timestamp: string     // unix timestamp string
+  rawPayload: object
 }

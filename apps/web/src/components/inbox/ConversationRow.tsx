@@ -11,6 +11,8 @@ interface ConversationRowProps {
   conversation: Conversation
   isActive: boolean
   onClick: () => void
+  isSelected?: boolean
+  onToggleSelect?: (id: string) => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -151,7 +153,7 @@ function CollisionRing({ agents }: { agents: Array<{ agentId: string; agentName:
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ConversationRow({ conversation, isActive, onClick }: ConversationRowProps) {
+export function ConversationRow({ conversation, isActive, onClick, isSelected = false, onToggleSelect }: ConversationRowProps) {
   const agentsViewing = useInboxStore(s => s.agentsViewing[conversation.id] ?? [])
 
   const customerName = conversation.customer?.name ?? 'Unknown'
@@ -171,14 +173,35 @@ export function ConversationRow({ conversation, isActive, onClick }: Conversatio
       transition={{ duration: 0.18, ease: 'easeOut' }}
       onClick={onClick}
       className={clsx(
-        'relative flex items-start gap-3 px-4 py-3 cursor-pointer',
+        'group relative flex items-start gap-3 px-4 py-3 cursor-pointer',
         'border-b border-gray-100 border-l-2 transition-colors',
         borderCls,
-        isActive
-          ? 'bg-violet-50 border-l-violet-500'
-          : 'hover:bg-violet-50/60'
+        isSelected
+          ? 'bg-violet-50/80 border-l-violet-500'
+          : isActive
+            ? 'bg-violet-50 border-l-violet-500'
+            : 'hover:bg-violet-50/60'
       )}
     >
+      {/* Checkbox (visible on hover or when selected) */}
+      {onToggleSelect && (
+        <div
+          className={clsx(
+            'absolute left-1 top-1/2 -translate-y-1/2 transition-opacity',
+            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          )}
+          onClick={e => { e.stopPropagation(); onToggleSelect(conversation.id) }}
+        >
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelect(conversation.id)}
+            className="w-3.5 h-3.5 rounded border-gray-300 text-violet-600 cursor-pointer accent-violet-600"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
+
       {/* Avatar */}
       <div className="relative flex-shrink-0">
         <div

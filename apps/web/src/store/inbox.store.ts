@@ -47,6 +47,10 @@ interface InboxState {
   agentsViewing: Record<string, Array<{ agentId: string; agentName: string }>>
   setAgentViewing: (conversationId: string, agentId: string, agentName: string) => void
   removeAgentViewing: (conversationId: string, agentId: string) => void
+
+  // Typing indicators: agentIds currently typing per conversation
+  typingIndicators: Record<string, Set<string>>
+  setTypingIndicator: (conversationId: string, agentId: string, isTyping: boolean) => void
 }
 
 export const useInboxStore = create<InboxState>((set) => ({
@@ -99,4 +103,21 @@ export const useInboxStore = create<InboxState>((set) => ({
           .filter(a => a.agentId !== agentId),
       },
     })),
+
+  typingIndicators: {},
+  setTypingIndicator: (conversationId, agentId, isTyping) =>
+    set((state) => {
+      const existing = new Set(state.typingIndicators[conversationId] ?? [])
+      if (isTyping) {
+        existing.add(agentId)
+      } else {
+        existing.delete(agentId)
+      }
+      return {
+        typingIndicators: {
+          ...state.typingIndicators,
+          [conversationId]: existing,
+        },
+      }
+    }),
 }))

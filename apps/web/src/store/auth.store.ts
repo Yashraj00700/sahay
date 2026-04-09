@@ -3,44 +3,42 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Agent, Tenant } from '@sahay/shared'
 
 interface AuthState {
-  token: string | null
-  refreshToken: string | null
+  // socketToken is held in memory only (never persisted) — used solely for Socket.IO
+  // authentication handshake which cannot use httpOnly cookies.
+  // The primary accessToken lives in an httpOnly cookie managed by the server.
+  socketToken: string | null
   agent: Agent | null
   tenant: Tenant | null
   isAuthenticated: boolean
   // Actions
-  setAuth: (params: { token: string; refreshToken: string; agent: Agent; tenant: Tenant }) => void
-  setToken: (token: string) => void
+  setAuth: (params: { token: string; agent: Agent; tenant: Tenant }) => void
   logout: () => void
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      token: null,
-      refreshToken: null,
+      socketToken: null,
       agent: null,
       tenant: null,
       isAuthenticated: false,
 
-      setAuth: ({ token, refreshToken, agent, tenant }) =>
-        set({ token, refreshToken, agent, tenant, isAuthenticated: true }),
-
-      setToken: (token) =>
-        set({ token }),
+      setAuth: ({ token, agent, tenant }) =>
+        set({ socketToken: token, agent, tenant, isAuthenticated: true }),
 
       logout: () =>
-        set({ token: null, refreshToken: null, agent: null, tenant: null, isAuthenticated: false }),
+        set({ socketToken: null, agent: null, tenant: null, isAuthenticated: false }),
     }),
     {
       name: 'sahay-auth',
-      storage: createJSONStorage(() => localStorage),
+      // sessionStorage: cleared when the browser tab is closed.
+      // Only non-sensitive profile data is persisted; socketToken is intentionally excluded.
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
-        token: state.token,
-        refreshToken: state.refreshToken,
         agent: state.agent,
         tenant: state.tenant,
         isAuthenticated: state.isAuthenticated,
+        // socketToken is NOT persisted — it is only held in memory for the session.
       }),
     }
   )
