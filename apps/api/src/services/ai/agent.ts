@@ -277,6 +277,7 @@ interface SystemPromptContext {
   totalSpent: string
   returnInterceptionActive: boolean
   productRecommendations: string
+  detectedIntent?: IntentCategory
 }
 
 function buildSystemPrompt(ctx: SystemPromptContext): string {
@@ -317,6 +318,21 @@ function buildSystemPrompt(ctx: SystemPromptContext): string {
 
   const preferred = ctx.preferredPhrases.length > 0
     ? `\n## PREFER these phrases\n${ctx.preferredPhrases.map(p => `- "${p}"`).join('\n')}`
+    : ''
+
+  const routineBuilderBlock = ctx.detectedIntent === 'routine_building'
+    ? `
+## SKINCARE ROUTINE BUILDER MODE
+The customer wants a personalized skincare routine. Your response MUST:
+1. Ask 2-3 clarifying questions if you don't have enough info (skin type, concerns, budget)
+2. If you have enough info, build a complete routine:
+   - MORNING: List products in application order (cleanser → toner → serum → moisturizer → SPF)
+   - EVENING: List products in application order
+3. For each product slot, recommend the most relevant product from the knowledge base
+4. Format as a clean numbered list with product names in **bold**
+5. End with: "Would you like to add any of these to your cart?"
+6. Keep it conversational and match the customer's language (Hindi/Hinglish/English)
+`
     : ''
 
   const returnInterceptionBlock = ctx.returnInterceptionActive
@@ -374,7 +390,7 @@ ${ragXml}
 <shopify_order>
 ${orderContext}
 </shopify_order>
-${ctx.productRecommendations ? `## Product Recommendations for This Customer\n${ctx.productRecommendations}\nWhen relevant, naturally mention these products as suggestions — do NOT hard-sell. Only include if directly useful to the customer's query.\n` : ''}${returnInterceptionBlock}
+${ctx.productRecommendations ? `## Product Recommendations for This Customer\n${ctx.productRecommendations}\nWhen relevant, naturally mention these products as suggestions — do NOT hard-sell. Only include if directly useful to the customer's query.\n` : ''}${routineBuilderBlock}${returnInterceptionBlock}
 ## Response Format
 Return ONLY a valid JSON object:
 {
@@ -678,6 +694,7 @@ export async function runAIPipeline(
     totalSpent: String(customer?.totalSpent ?? '0'),
     returnInterceptionActive,
     productRecommendations,
+    detectedIntent: intentResult.intent,
   })
 
   const model = SIMPLE_INTENTS.has(intentResult.intent)

@@ -14,6 +14,9 @@ import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 // CSAT Survey (public)
 import { CSATPage } from './pages/csat/CSATPage'
 
+// Webchat widget page (public — loaded inside embed iframe)
+import { ChatWidgetPage } from './pages/chat/ChatWidgetPage'
+
 // Onboarding
 import { OnboardingPage } from './pages/onboarding/OnboardingPage'
 
@@ -53,6 +56,7 @@ export default function App() {
       <Routes>
         {/* Public routes — no auth required */}
         <Route path="/csat/:conversationId" element={<CSATPage />} />
+        <Route path="/chat" element={<ChatWidgetPage />} />
 
         {/* Auth routes — redirect to inbox if already logged in */}
         <Route path="/login" element={<AuthRoute><LoginPage /></AuthRoute>} />

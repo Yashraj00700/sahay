@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Lock, Play, Pause } from 'lucide-react'
+import { Lock, Play, Pause, Sun, Moon } from 'lucide-react'
 import clsx from 'clsx'
 import type { Message, MessageSenderType } from '@sahay/shared'
 
@@ -113,6 +113,115 @@ function ConfidenceBadge({ confidence }: { confidence?: number }) {
   )
 }
 
+// ─── Skincare Routine Card ────────────────────────────────────────────────────
+
+/** Returns true when the message text contains structured routine content. */
+function isRoutineMessage(content: string): boolean {
+  return /\*\*MORNING\*\*|\*\*EVENING\*\*/i.test(content)
+}
+
+interface RoutineSection {
+  label: string
+  items: string[]
+}
+
+/**
+ * Parses a routine message into Morning / Evening sections.
+ * Lines that start with a number or dash are treated as product entries.
+ * Everything before the first section header is kept as a preamble.
+ */
+function parseRoutine(content: string): { preamble: string; sections: RoutineSection[]; footer: string } {
+  const lines = content.split('\n')
+  const sections: RoutineSection[] = []
+  let preamble = ''
+  let footer = ''
+  let currentSection: RoutineSection | null = null
+  let seenSection = false
+  let footerStarted = false
+
+  for (const raw of lines) {
+    const line = raw.trim()
+
+    // Detect section headers like **MORNING** or **EVENING**
+    const headerMatch = line.match(/\*\*(MORNING|EVENING)\*\*/i)
+    if (headerMatch) {
+      if (currentSection) sections.push(currentSection)
+      currentSection = { label: headerMatch[1]!.toUpperCase(), items: [] }
+      seenSection = true
+      footerStarted = false
+      continue
+    }
+
+    if (!seenSection) {
+      preamble += (preamble ? '\n' : '') + line
+      continue
+    }
+
+    // After all sections, collect footer (non-list lines after the last section)
+    const isListItem = /^(\d+[\.\)]|-|\*)/.test(line)
+
+    if (currentSection && isListItem) {
+      // Strip leading list markers and clean **bold** markers for the label text
+      const cleaned = line.replace(/^(\d+[\.\)]|-|\*)\s*/, '').replace(/\*\*/g, '')
+      if (cleaned) currentSection.items.push(cleaned)
+      footerStarted = false
+    } else if (line && !isListItem) {
+      // Non-list content after a section header — could be footer or section prose
+      if (footerStarted || sections.length > 0) {
+        footerStarted = true
+        footer += (footer ? '\n' : '') + line
+      }
+    }
+  }
+
+  if (currentSection) sections.push(currentSection)
+
+  return { preamble: preamble.trim(), sections, footer: footer.trim() }
+}
+
+function SkincareRoutineCard({ content }: { content: string }) {
+  const { preamble, sections, footer } = parseRoutine(content)
+
+  return (
+    <div className="rounded-xl border border-indigo-200 bg-white shadow-sm overflow-hidden text-gray-800 text-[13px] leading-relaxed w-full">
+      {preamble ? (
+        <div className="px-4 pt-3 pb-2 text-gray-600 whitespace-pre-wrap">{preamble}</div>
+      ) : null}
+
+      {sections.map((section) => {
+        const isMorning = section.label === 'MORNING'
+        return (
+          <div key={section.label} className={clsx('px-4 py-3', isMorning ? 'bg-amber-50' : 'bg-indigo-50')}>
+            <div className={clsx('flex items-center gap-1.5 font-semibold mb-2 text-[12px] uppercase tracking-wide', isMorning ? 'text-amber-600' : 'text-indigo-600')}>
+              {isMorning
+                ? <Sun className="w-3.5 h-3.5" />
+                : <Moon className="w-3.5 h-3.5" />
+              }
+              {section.label}
+            </div>
+            <ol className="space-y-1.5 pl-0 list-none">
+              {section.items.map((item, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className={clsx('flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5', isMorning ? 'bg-amber-200 text-amber-700' : 'bg-indigo-200 text-indigo-700')}>
+                    {idx + 1}
+                  </span>
+                  <span className="text-gray-700">{item}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )
+      })}
+
+      {footer ? (
+        <div className="px-4 py-3 border-t border-indigo-100 text-gray-600 whitespace-pre-wrap italic text-[12px]">
+          {footer}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function MessageBubble({ message, previousSenderType }: MessageBubbleProps) {
@@ -211,6 +320,8 @@ export function MessageBubble({ message, previousSenderType }: MessageBubbleProp
 
   // ── AI ────────────────────────────────────────────────────
   if (message.senderType === 'ai') {
+    const isRoutine = Boolean(message.content && isRoutineMessage(message.content))
+
     return (
       <motion.div
         initial={{ opacity: 0, x: 8 }}
@@ -220,7 +331,7 @@ export function MessageBubble({ message, previousSenderType }: MessageBubbleProp
         onMouseEnter={() => setShowTimestamp(true)}
         onMouseLeave={() => setShowTimestamp(false)}
       >
-        <div className="max-w-[72%]">
+        <div className={clsx(isRoutine ? 'max-w-[85%] w-full' : 'max-w-[72%]')}>
           {/* AI chip */}
           {isFirstInSequence && (
             <div className="flex items-center justify-end gap-1.5 mb-1">
@@ -229,12 +340,16 @@ export function MessageBubble({ message, previousSenderType }: MessageBubbleProp
             </div>
           )}
 
-          <div
-            className="relative bg-gradient-to-br from-violet-600 to-violet-500 text-white px-3.5 py-2.5 text-[13px] leading-relaxed"
-            style={{ borderRadius: '18px 18px 4px 18px' }}
-          >
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
-          </div>
+          {isRoutine ? (
+            <SkincareRoutineCard content={message.content ?? ''} />
+          ) : (
+            <div
+              className="relative bg-gradient-to-br from-violet-600 to-violet-500 text-white px-3.5 py-2.5 text-[13px] leading-relaxed"
+              style={{ borderRadius: '18px 18px 4px 18px' }}
+            >
+              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            </div>
+          )}
 
           {showTimestamp && (
             <motion.span

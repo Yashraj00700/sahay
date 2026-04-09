@@ -238,6 +238,7 @@ export function DashboardPage() {
     queryKey: ['analytics', 'overview', '7d'],
     queryFn: () => apiRequest<AnalyticsOverview>('GET', '/analytics/overview', undefined, { period: '7d' }),
     staleTime: 2 * 60 * 1000,
+    refetchInterval: 30000,
     retry: 2,
   })
 

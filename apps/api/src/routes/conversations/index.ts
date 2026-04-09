@@ -7,6 +7,20 @@ import { requireAuth } from '../../middleware/auth.middleware'
 import { auditAction } from '../../services/audit'
 import { getIO } from '../../lib/socket'
 import { csatQueue } from '../../lib/queues'
+import type { Server } from 'socket.io'
+
+// ─── Dashboard metrics helper ─────────────────────────────────────────────────
+
+async function emitDashboardUpdate(tenantId: string, io: Server | null) {
+  if (!io) return
+  const [active] = await db.select({ count: sql<number>`count(*)` })
+    .from(conversations)
+    .where(and(eq(conversations.tenantId, tenantId), eq(conversations.status, 'open')))
+
+  io.to(`tenant:${tenantId}`).emit('dashboard:metrics', {
+    activeConversations: Number(active?.count ?? 0),
+  })
+}
 
 // ─── Request schemas ─────────────────────────────────────────────────────────
 
@@ -389,6 +403,7 @@ export const conversationRoutes: FastifyPluginAsync = async (app) => {
 
     const socketIo = getIO()
     socketIo?.to(`tenant:${req.tenant.id}`).emit('conversation:updated', updated)
+    await emitDashboardUpdate(req.tenant.id, socketIo)
 
     // Dispatch CSAT survey when conversation is newly resolved
     if (becomingResolved && existing.customerId) {
@@ -423,6 +438,7 @@ export const conversationRoutes: FastifyPluginAsync = async (app) => {
     if (!updated) return reply.status(404).send({ message: 'Not found' })
     const socketIo = getIO()
     socketIo?.to(`tenant:${req.tenant.id}`).emit('conversation:updated', updated)
+    await emitDashboardUpdate(req.tenant.id, socketIo)
     return reply.send(updated)
   })
 
@@ -464,6 +480,7 @@ export const conversationRoutes: FastifyPluginAsync = async (app) => {
 
     const socketIo = getIO()
     socketIo?.to(`tenant:${tenantId}`).emit('conversations:bulk_updated', { ids, action })
+    await emitDashboardUpdate(tenantId, socketIo)
 
     await auditAction({
       tenantId,

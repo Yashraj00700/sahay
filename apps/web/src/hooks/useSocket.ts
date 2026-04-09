@@ -151,6 +151,14 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all(tenant.id) })
     })
 
+    // ─── Live dashboard metrics ───────────────────────────
+    socket.on('dashboard:metrics', (metrics: { activeConversations: number; queueDepth: number; aiResolutionRate: number }) => {
+      queryClient.setQueryData(['dashboard', 'metrics', tenant?.id], (old: any) => ({
+        ...old,
+        ...metrics,
+      }))
+    })
+
     return () => {
       viewingTimers.forEach(clearTimeout)
       socket?.disconnect()
