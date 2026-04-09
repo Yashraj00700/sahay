@@ -23,8 +23,10 @@ export function encrypt(plaintext: string): string {
 
 export function decrypt(ciphertext: string): string {
   if (!ciphertext || !ciphertext.includes(':')) return ciphertext // not encrypted
+  const parts = ciphertext.split(':')
+  if (parts.length !== 3) throw new Error('Invalid ciphertext format — expected iv:authTag:ciphertext')
   const key = getKey()
-  const [ivHex, tagHex, encryptedHex] = ciphertext.split(':')
+  const [ivHex, tagHex, encryptedHex] = parts as [string, string, string]
   const iv = Buffer.from(ivHex, 'hex')
   const tag = Buffer.from(tagHex, 'hex')
   const encrypted = Buffer.from(encryptedHex, 'hex')
