@@ -17,6 +17,7 @@ import { InboxPage } from './pages/inbox/InboxPage'
 import { AnalyticsPage } from './pages/analytics/AnalyticsPage'
 import { KnowledgeBasePage } from './pages/knowledge-base/KnowledgeBasePage'
 import { SettingsPage } from './pages/settings/SettingsPage'
+import { ComingSoonPage } from './pages/ComingSoonPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -60,6 +61,25 @@ export default function App() {
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
           <Route path="/settings/*" element={<SettingsPage />} />
+
+          {/* ── New sidebar routes (stub pages) ── */}
+          <Route path="/customers" element={<ComingSoonPage />} />
+          <Route path="/cod-prepaid" element={<ComingSoonPage />} />
+          <Route path="/campaigns" element={<ComingSoonPage />} />
+          <Route path="/routines" element={<ComingSoonPage />} />
+          <Route path="/skincare-routine" element={<ComingSoonPage />} />
+          <Route path="/notifications" element={<ComingSoonPage />} />
+          <Route path="/integrations" element={<ComingSoonPage />} />
+          <Route path="/ai-performance" element={<ComingSoonPage />} />
+          <Route path="/cod-manager" element={<ComingSoonPage />} />
+          <Route path="/order-tracking" element={<ComingSoonPage />} />
+          <Route path="/csat" element={<ComingSoonPage />} />
+          <Route path="/return-prevention" element={<ComingSoonPage />} />
+          <Route path="/returns" element={<ComingSoonPage />} />
+          <Route path="/billing" element={<ComingSoonPage />} />
+          <Route path="/team" element={<ComingSoonPage />} />
+          <Route path="/audit-log" element={<ComingSoonPage />} />
+          <Route path="/demo" element={<ComingSoonPage />} />
         </Route>
 
         {/* 404 */}
