@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { db, knowledgeChunks } from '@sahay/db'
+import { knowledgeChunks, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { generateEmbedding } from '../../services/ai/embeddings'
 
@@ -21,13 +21,15 @@ export const aiEmbed = inngest.createFunction(
   async ({ event, step, logger }) => {
     const { tenantId, kbChunkId } = event.data
 
-    const chunk = await step.run('load-chunk', async () => {
-      const row = await db.query.knowledgeChunks.findFirst({
-        where: eq(knowledgeChunks.id, kbChunkId),
-      })
-      if (!row) throw new Error(`ai-embed: chunk ${kbChunkId} not found`)
-      return row
-    })
+    const chunk = await step.run('load-chunk', async () =>
+      withTenant(tenantId, async (tx) => {
+        const row = await tx.query.knowledgeChunks.findFirst({
+          where: eq(knowledgeChunks.id, kbChunkId),
+        })
+        if (!row) throw new Error(`ai-embed: chunk ${kbChunkId} not found`)
+        return row
+      }),
+    )
 
     if (chunk.tenantId !== tenantId) {
       logger.warn(
@@ -52,15 +54,17 @@ export const aiEmbed = inngest.createFunction(
       return generateEmbedding(chunk.content)
     })
 
-    await step.run('persist-embedding', async () => {
-      await db
-        .update(knowledgeChunks)
-        .set({
-          embedding,
-          lastUpdated: new Date(),
-        })
-        .where(eq(knowledgeChunks.id, kbChunkId))
-    })
+    await step.run('persist-embedding', async () =>
+      withTenant(tenantId, (tx) =>
+        tx
+          .update(knowledgeChunks)
+          .set({
+            embedding,
+            lastUpdated: new Date(),
+          })
+          .where(eq(knowledgeChunks.id, kbChunkId)),
+      ),
+    )
 
     return { kbChunkId, dimensions: embedding.length }
   },

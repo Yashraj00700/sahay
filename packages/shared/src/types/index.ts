@@ -212,20 +212,55 @@ export interface AnalyticsOverview {
   totalConversations: number
   newConversations: number
   resolvedConversations: number
-  aiResolved: number
-  aiResolutionRate: number
+  resolvedRate: number             // % of conversations resolved (0-100)
+  aiResolved: number               // conversations where humanTouched=false AND aiHandled=true
+  aiResolutionRate: number         // % of conversations resolved AI-only (0-100)
   avgFirstResponseSeconds: number
   avgResolutionSeconds: number
   avgCsat: number | null
   csatResponses: number
+  totalMessages: number            // total agent/AI messages sent in window
+  topIntent: string | null         // mode of primaryIntent
   codConversions: number
   codConversionRevenue: number
   channelBreakdown: Record<Channel, number>
   trends: {
-    conversationsDelta: number  // % change vs previous period
+    conversationsDelta: number     // % change vs previous period
     aiResolutionDelta: number
     csatDelta: number | null
   }
+}
+
+/** Per-agent performance metrics over a date range. */
+export interface AgentMetric {
+  agentId: string
+  name: string
+  role: AgentRole
+  conversationsHandled: number     // assignedTo = agent
+  conversationsResolved: number    // resolved within window
+  avgResponseTimeSec: number | null
+  avgResolutionTimeSec: number | null
+  avgCsat: number | null
+  csatCount: number
+  turnCountAvg: number | null
+  aiAssistedRate: number           // share of agent's convs where humanTouched && aiHandled (0-1)
+}
+
+/** A single bucket in a time-series response. */
+export interface TimeseriesPoint {
+  ts: string                       // ISO bucket start
+  value: number
+}
+
+export type TimeseriesMetric = 'conversations' | 'resolutions' | 'messages' | 'csat'
+export type TimeseriesInterval = 'hour' | 'day' | 'week'
+
+export interface TimeseriesResponse {
+  metric: TimeseriesMetric
+  interval: TimeseriesInterval
+  dateFrom: string                 // ISO
+  dateTo: string                   // ISO
+  points: TimeseriesPoint[]
 }
 
 // ─── WebSocket Events ──────────────────────────────────────────

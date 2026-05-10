@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { db, customers, conversations, messages } from '@sahay/db'
+import { customers, conversations, messages, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { triggerToTenant } from '../../lib/pusher'
 import { fetchAndStoreInstagramMedia } from '../../services/channels/instagram.media'
@@ -174,118 +174,124 @@ export const instagramIncoming = inngest.createFunction(
       }
     }
 
-    const customer = await step.run('upsert-customer', async () => {
-      const existing = await db.query.customers.findFirst({
-        where: and(
-          eq(customers.tenantId, tenantId),
-          eq(customers.instagramId, parsed.igUserId),
-        ),
-      })
-      if (existing) return { id: existing.id, tier: existing.tier ?? 'new' }
-
-      const [created] = await db
-        .insert(customers)
-        .values({
-          tenantId,
-          instagramId: parsed.igUserId,
-          languagePref: 'auto',
+    const customer = await step.run('upsert-customer', async () =>
+      withTenant(tenantId, async (tx) => {
+        const existing = await tx.query.customers.findFirst({
+          where: and(
+            eq(customers.tenantId, tenantId),
+            eq(customers.instagramId, parsed.igUserId),
+          ),
         })
-        .returning({ id: customers.id, tier: customers.tier })
-      if (!created) throw new Error('instagram-incoming: failed to insert customer')
-      return { id: created.id, tier: created.tier ?? 'new' }
-    })
+        if (existing) return { id: existing.id, tier: existing.tier ?? 'new' }
 
-    const conversation = await step.run('upsert-conversation', async () => {
-      const existing = await db.query.conversations.findFirst({
-        where: and(
-          eq(conversations.tenantId, tenantId),
-          eq(conversations.customerId, customer.id),
-          eq(conversations.channel, 'instagram'),
-          eq(conversations.status, 'open'),
-        ),
-      })
-      const now = new Date()
-      const sessionExpired = existing?.sessionExpiresAt
-        ? existing.sessionExpiresAt < now
-        : false
-
-      if (!existing || sessionExpired) {
-        const [created] = await db
-          .insert(conversations)
+        const [created] = await tx
+          .insert(customers)
           .values({
             tenantId,
-            customerId: customer.id,
-            channel: 'instagram',
-            status: 'open',
-            sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            instagramId: parsed.igUserId,
+            languagePref: 'auto',
           })
-          .returning()
-        if (!created) throw new Error('instagram-incoming: failed to insert conversation')
-        return { id: created.id, turnCount: created.turnCount ?? 0 }
-      }
+          .returning({ id: customers.id, tier: customers.tier })
+        if (!created) throw new Error('instagram-incoming: failed to insert customer')
+        return { id: created.id, tier: created.tier ?? 'new' }
+      }),
+    )
 
-      await db
-        .update(conversations)
-        .set({
-          sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-          updatedAt: now,
+    const conversation = await step.run('upsert-conversation', async () =>
+      withTenant(tenantId, async (tx) => {
+        const existing = await tx.query.conversations.findFirst({
+          where: and(
+            eq(conversations.tenantId, tenantId),
+            eq(conversations.customerId, customer.id),
+            eq(conversations.channel, 'instagram'),
+            eq(conversations.status, 'open'),
+          ),
         })
-        .where(eq(conversations.id, existing.id))
-      return { id: existing.id, turnCount: existing.turnCount ?? 0 }
-    })
+        const now = new Date()
+        const sessionExpired = existing?.sessionExpiresAt
+          ? existing.sessionExpiresAt < now
+          : false
 
-    const storedMessage = await step.run('insert-message', async () => {
-      const existing = await db.query.messages.findFirst({
-        where: and(
-          eq(messages.tenantId, tenantId),
-          eq(messages.channelMessageId, parsed.messageId),
-        ),
-      })
-      if (existing) return { id: existing.id, deduped: true }
+        if (!existing || sessionExpired) {
+          const [created] = await tx
+            .insert(conversations)
+            .values({
+              tenantId,
+              customerId: customer.id,
+              channel: 'instagram',
+              status: 'open',
+              sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            })
+            .returning()
+          if (!created) throw new Error('instagram-incoming: failed to insert conversation')
+          return { id: created.id, turnCount: created.turnCount ?? 0 }
+        }
 
-      const msgContent =
-        parsed.type === 'text'
-          ? parsed.text ?? ''
-          : media.placeholderContent
+        await tx
+          .update(conversations)
+          .set({
+            sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            updatedAt: now,
+          })
+          .where(eq(conversations.id, existing.id))
+        return { id: existing.id, turnCount: existing.turnCount ?? 0 }
+      }),
+    )
 
-      // R2-mirrored URL takes precedence; fall back to the (short-lived)
-      // source URL only when we couldn't (or didn't try to) re-host.
-      const finalMediaUrl = media.url ?? parsed.attachmentUrl ?? undefined
-      const finalMediaMime =
-        media.mimeType ?? parsed.attachmentMime ?? undefined
-
-      const [created] = await db
-        .insert(messages)
-        .values({
-          conversationId: conversation.id,
-          tenantId,
-          senderType: 'customer',
-          contentType: parsed.type,
-          content: msgContent,
-          mediaUrl: finalMediaUrl,
-          mediaSize: media.size ?? undefined,
-          mediaMimeType: finalMediaMime,
-          channelMessageId: parsed.messageId,
-          channelStatus: 'delivered',
-          channelRawPayload: parsed.rawPayload,
-          igStoryId: parsed.igStoryId ?? undefined,
-          igStoryMediaUrl: parsed.igStoryMediaUrl ?? undefined,
-          sentAt: new Date(Number(parsed.timestamp)),
+    const storedMessage = await step.run('insert-message', async () =>
+      withTenant(tenantId, async (tx) => {
+        const existing = await tx.query.messages.findFirst({
+          where: and(
+            eq(messages.tenantId, tenantId),
+            eq(messages.channelMessageId, parsed.messageId),
+          ),
         })
-        .returning({ id: messages.id })
+        if (existing) return { id: existing.id, deduped: true }
 
-      if (!created) throw new Error('instagram-incoming: failed to insert message')
+        const msgContent =
+          parsed.type === 'text'
+            ? parsed.text ?? ''
+            : media.placeholderContent
 
-      await db
-        .update(conversations)
-        .set({
-          turnCount: (conversation.turnCount ?? 0) + 1,
-          updatedAt: new Date(),
-        })
-        .where(eq(conversations.id, conversation.id))
+        // R2-mirrored URL takes precedence; fall back to the (short-lived)
+        // source URL only when we couldn't (or didn't try to) re-host.
+        const finalMediaUrl = media.url ?? parsed.attachmentUrl ?? undefined
+        const finalMediaMime =
+          media.mimeType ?? parsed.attachmentMime ?? undefined
 
-      return { id: created.id, deduped: false }
-    })
+        const [created] = await tx
+          .insert(messages)
+          .values({
+            conversationId: conversation.id,
+            tenantId,
+            senderType: 'customer',
+            contentType: parsed.type,
+            content: msgContent,
+            mediaUrl: finalMediaUrl,
+            mediaSize: media.size ?? undefined,
+            mediaMimeType: finalMediaMime,
+            channelMessageId: parsed.messageId,
+            channelStatus: 'delivered',
+            channelRawPayload: parsed.rawPayload,
+            igStoryId: parsed.igStoryId ?? undefined,
+            igStoryMediaUrl: parsed.igStoryMediaUrl ?? undefined,
+            sentAt: new Date(Number(parsed.timestamp)),
+          })
+          .returning({ id: messages.id })
+
+        if (!created) throw new Error('instagram-incoming: failed to insert message')
+
+        await tx
+          .update(conversations)
+          .set({
+            turnCount: (conversation.turnCount ?? 0) + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(conversations.id, conversation.id))
+
+        return { id: created.id, deduped: false }
+      }),
+    )
 
     await step.sendEvent('queue-ai', {
       name: 'ai/respond.requested',

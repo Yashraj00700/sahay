@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { db, customers, conversations, messages } from '@sahay/db'
+import { customers, conversations, messages, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { triggerToTenant } from '../../lib/pusher'
 
@@ -34,95 +34,101 @@ export const webchatIncoming = inngest.createFunction(
 
     const syntheticEmail = `web+${sessionId}@anon.sahay.local`
 
-    const customer = await step.run('upsert-customer', async () => {
-      const existing = await db.query.customers.findFirst({
-        where: and(
-          eq(customers.tenantId, tenantId),
-          eq(customers.email, syntheticEmail),
-        ),
-      })
-      if (existing) return { id: existing.id, tier: existing.tier ?? 'new' }
-
-      const [created] = await db
-        .insert(customers)
-        .values({
-          tenantId,
-          email: syntheticEmail,
-          name: `Web visitor ${sessionId.slice(0, 8)}`,
-          languagePref: 'auto',
-          tier: 'new',
+    const customer = await step.run('upsert-customer', async () =>
+      withTenant(tenantId, async (tx) => {
+        const existing = await tx.query.customers.findFirst({
+          where: and(
+            eq(customers.tenantId, tenantId),
+            eq(customers.email, syntheticEmail),
+          ),
         })
-        .returning({ id: customers.id, tier: customers.tier })
-      if (!created) throw new Error('webchat-incoming: failed to insert customer')
-      return { id: created.id, tier: created.tier ?? 'new' }
-    })
+        if (existing) return { id: existing.id, tier: existing.tier ?? 'new' }
 
-    const conversation = await step.run('upsert-conversation', async () => {
-      const existing = await db.query.conversations.findFirst({
-        where: and(
-          eq(conversations.tenantId, tenantId),
-          eq(conversations.customerId, customer.id),
-          eq(conversations.channel, 'webchat'),
-          eq(conversations.status, 'open'),
-        ),
-      })
-      const now = new Date()
-      // Webchat sessions live as long as the cookie does; no Meta-policy
-      // window. We still mark a 24h heartbeat for routing parity.
-      const sessionExpired = existing?.sessionExpiresAt
-        ? existing.sessionExpiresAt < now
-        : false
-
-      if (!existing || sessionExpired) {
-        const [created] = await db
-          .insert(conversations)
+        const [created] = await tx
+          .insert(customers)
           .values({
             tenantId,
-            customerId: customer.id,
-            channel: 'webchat',
-            status: 'open',
-            sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            email: syntheticEmail,
+            name: `Web visitor ${sessionId.slice(0, 8)}`,
+            languagePref: 'auto',
+            tier: 'new',
           })
-          .returning()
-        if (!created) throw new Error('webchat-incoming: failed to insert conversation')
-        return { id: created.id, turnCount: created.turnCount ?? 0 }
-      }
+          .returning({ id: customers.id, tier: customers.tier })
+        if (!created) throw new Error('webchat-incoming: failed to insert customer')
+        return { id: created.id, tier: created.tier ?? 'new' }
+      }),
+    )
 
-      await db
-        .update(conversations)
-        .set({
-          sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-          updatedAt: now,
+    const conversation = await step.run('upsert-conversation', async () =>
+      withTenant(tenantId, async (tx) => {
+        const existing = await tx.query.conversations.findFirst({
+          where: and(
+            eq(conversations.tenantId, tenantId),
+            eq(conversations.customerId, customer.id),
+            eq(conversations.channel, 'webchat'),
+            eq(conversations.status, 'open'),
+          ),
         })
-        .where(eq(conversations.id, existing.id))
-      return { id: existing.id, turnCount: existing.turnCount ?? 0 }
-    })
+        const now = new Date()
+        // Webchat sessions live as long as the cookie does; no Meta-policy
+        // window. We still mark a 24h heartbeat for routing parity.
+        const sessionExpired = existing?.sessionExpiresAt
+          ? existing.sessionExpiresAt < now
+          : false
 
-    const storedMessage = await step.run('insert-message', async () => {
-      const [created] = await db
-        .insert(messages)
-        .values({
-          conversationId: conversation.id,
-          tenantId,
-          senderType: 'customer',
-          contentType: 'text',
-          content: message,
-          channelStatus: 'delivered',
-          sentAt: new Date(),
-        })
-        .returning({ id: messages.id })
-      if (!created) throw new Error('webchat-incoming: failed to insert message')
+        if (!existing || sessionExpired) {
+          const [created] = await tx
+            .insert(conversations)
+            .values({
+              tenantId,
+              customerId: customer.id,
+              channel: 'webchat',
+              status: 'open',
+              sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            })
+            .returning()
+          if (!created) throw new Error('webchat-incoming: failed to insert conversation')
+          return { id: created.id, turnCount: created.turnCount ?? 0 }
+        }
 
-      await db
-        .update(conversations)
-        .set({
-          turnCount: (conversation.turnCount ?? 0) + 1,
-          updatedAt: new Date(),
-        })
-        .where(eq(conversations.id, conversation.id))
+        await tx
+          .update(conversations)
+          .set({
+            sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            updatedAt: now,
+          })
+          .where(eq(conversations.id, existing.id))
+        return { id: existing.id, turnCount: existing.turnCount ?? 0 }
+      }),
+    )
 
-      return { id: created.id }
-    })
+    const storedMessage = await step.run('insert-message', async () =>
+      withTenant(tenantId, async (tx) => {
+        const [created] = await tx
+          .insert(messages)
+          .values({
+            conversationId: conversation.id,
+            tenantId,
+            senderType: 'customer',
+            contentType: 'text',
+            content: message,
+            channelStatus: 'delivered',
+            sentAt: new Date(),
+          })
+          .returning({ id: messages.id })
+        if (!created) throw new Error('webchat-incoming: failed to insert message')
+
+        await tx
+          .update(conversations)
+          .set({
+            turnCount: (conversation.turnCount ?? 0) + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(conversations.id, conversation.id))
+
+        return { id: created.id }
+      }),
+    )
 
     await step.sendEvent('queue-ai', {
       name: 'ai/respond.requested',

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { db, conversations, customers } from '@sahay/db'
+import { conversations, customers, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { runAIPipeline } from '../../services/ai/agent'
 import { auditAction } from '../../services/audit'
@@ -47,15 +47,17 @@ export const aiRespond = inngest.createFunction(
       logger.error({ err, tenantId, conversationId }, 'ai-respond: pipeline failure — falling back to human')
 
       await step.run('fallback-route-human', async () => {
-        await db
-          .update(conversations)
-          .set({
-            routingDecision: 'route_to_human',
-            escalationReason: 'ai_pipeline_error',
-            humanTouched: true,
-            updatedAt: new Date(),
-          })
-          .where(eq(conversations.id, conversationId))
+        await withTenant(tenantId, (tx) =>
+          tx
+            .update(conversations)
+            .set({
+              routingDecision: 'route_to_human',
+              escalationReason: 'ai_pipeline_error',
+              humanTouched: true,
+              updatedAt: new Date(),
+            })
+            .where(eq(conversations.id, conversationId)),
+        )
 
         await auditAction({
           tenantId,
@@ -105,14 +107,17 @@ export const aiRespond = inngest.createFunction(
       await step.run('dispatch-outgoing', async () => {
         // We need the channel + recipient for the outbound send. Look it
         // up once here so we can route to the right channel queue.
-        const conv = await db.query.conversations.findFirst({
-          where: eq(conversations.id, conversationId),
+        const { conv, customer } = await withTenant(tenantId, async (tx) => {
+          const conv = await tx.query.conversations.findFirst({
+            where: eq(conversations.id, conversationId),
+          })
+          if (!conv) throw new Error('ai-respond: conversation not found for dispatch')
+          const customer = await tx.query.customers.findFirst({
+            where: eq(customers.id, conv.customerId),
+          })
+          if (!customer) throw new Error('ai-respond: customer not found for dispatch')
+          return { conv, customer }
         })
-        if (!conv) throw new Error('ai-respond: conversation not found for dispatch')
-        const customer = await db.query.customers.findFirst({
-          where: eq(customers.id, conv.customerId),
-        })
-        if (!customer) throw new Error('ai-respond: customer not found for dispatch')
 
         if (conv.channel === 'whatsapp' && customer.whatsappId) {
           await inngest.send({

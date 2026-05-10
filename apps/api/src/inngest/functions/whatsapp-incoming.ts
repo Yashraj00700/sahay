@@ -196,138 +196,144 @@ export const whatsappIncoming = inngest.createFunction(
     }
 
     // 2. Find or create the customer record keyed by whatsappId.
-    const customer = await step.run('upsert-customer', async () => {
-      const normalizedPhone = normalizeIndianPhone(parsed.from)
-      const existing = await db.query.customers.findFirst({
-        where: and(
-          eq(customers.tenantId, tenantId),
-          eq(customers.whatsappId, parsed.from),
-        ),
-      })
-      if (existing) {
-        return { id: existing.id, tier: existing.tier ?? 'new' }
-      }
-      const [created] = await db
-        .insert(customers)
-        .values({
-          tenantId,
-          phone: normalizedPhone,
-          whatsappId: parsed.from,
-          languagePref: 'auto',
+    const customer = await step.run('upsert-customer', async () =>
+      withTenant(tenantId, async (tx) => {
+        const normalizedPhone = normalizeIndianPhone(parsed.from)
+        const existing = await tx.query.customers.findFirst({
+          where: and(
+            eq(customers.tenantId, tenantId),
+            eq(customers.whatsappId, parsed.from),
+          ),
         })
-        .returning({ id: customers.id, tier: customers.tier })
-      if (!created) throw new Error('whatsapp-incoming: failed to insert customer')
-      return { id: created.id, tier: created.tier ?? 'new' }
-    })
-
-    // 3. Find an open 24h-window conversation or open a new one.
-    const conversation = await step.run('upsert-conversation', async () => {
-      const existing = await db.query.conversations.findFirst({
-        where: and(
-          eq(conversations.tenantId, tenantId),
-          eq(conversations.customerId, customer.id),
-          eq(conversations.channel, 'whatsapp'),
-          eq(conversations.status, 'open'),
-        ),
-      })
-      const now = new Date()
-      const sessionExpired = existing?.sessionExpiresAt
-        ? existing.sessionExpiresAt < now
-        : false
-
-      if (!existing || sessionExpired) {
-        const [created] = await db
-          .insert(conversations)
+        if (existing) {
+          return { id: existing.id, tier: existing.tier ?? 'new' }
+        }
+        const [created] = await tx
+          .insert(customers)
           .values({
             tenantId,
-            customerId: customer.id,
-            channel: 'whatsapp',
-            status: 'open',
-            sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            phone: normalizedPhone,
+            whatsappId: parsed.from,
+            languagePref: 'auto',
           })
-          .returning()
-        if (!created) throw new Error('whatsapp-incoming: failed to insert conversation')
-        return { id: created.id, turnCount: created.turnCount ?? 0 }
-      }
+          .returning({ id: customers.id, tier: customers.tier })
+        if (!created) throw new Error('whatsapp-incoming: failed to insert customer')
+        return { id: created.id, tier: created.tier ?? 'new' }
+      }),
+    )
 
-      // Refresh the 24h window on every new message.
-      await db
-        .update(conversations)
-        .set({
-          sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-          updatedAt: now,
+    // 3. Find an open 24h-window conversation or open a new one.
+    const conversation = await step.run('upsert-conversation', async () =>
+      withTenant(tenantId, async (tx) => {
+        const existing = await tx.query.conversations.findFirst({
+          where: and(
+            eq(conversations.tenantId, tenantId),
+            eq(conversations.customerId, customer.id),
+            eq(conversations.channel, 'whatsapp'),
+            eq(conversations.status, 'open'),
+          ),
         })
-        .where(eq(conversations.id, existing.id))
+        const now = new Date()
+        const sessionExpired = existing?.sessionExpiresAt
+          ? existing.sessionExpiresAt < now
+          : false
 
-      return { id: existing.id, turnCount: existing.turnCount ?? 0 }
-    })
+        if (!existing || sessionExpired) {
+          const [created] = await tx
+            .insert(conversations)
+            .values({
+              tenantId,
+              customerId: customer.id,
+              channel: 'whatsapp',
+              status: 'open',
+              sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            })
+            .returning()
+          if (!created) throw new Error('whatsapp-incoming: failed to insert conversation')
+          return { id: created.id, turnCount: created.turnCount ?? 0 }
+        }
+
+        // Refresh the 24h window on every new message.
+        await tx
+          .update(conversations)
+          .set({
+            sessionExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            updatedAt: now,
+          })
+          .where(eq(conversations.id, existing.id))
+
+        return { id: existing.id, turnCount: existing.turnCount ?? 0 }
+      }),
+    )
 
     // 4. Persist the message row + bump conversation turn count.
-    const storedMessage = await step.run('insert-message', async () => {
-      // Text content stays as-is. Media messages either store the caption
-      // (image/video) or the failure placeholder so the dashboard always
-      // has *some* preview text to render.
-      const captionFromPayload =
-        parsed.image?.caption ??
-        parsed.video?.caption ??
-        null
+    const storedMessage = await step.run('insert-message', async () =>
+      withTenant(tenantId, async (tx) => {
+        // Text content stays as-is. Media messages either store the caption
+        // (image/video) or the failure placeholder so the dashboard always
+        // has *some* preview text to render.
+        const captionFromPayload =
+          parsed.image?.caption ??
+          parsed.video?.caption ??
+          null
 
-      const msgContent =
-        parsed.type === 'text'
-          ? parsed.text?.body ?? ''
-          : captionFromPayload ?? media.placeholderContent
+        const msgContent =
+          parsed.type === 'text'
+            ? parsed.text?.body ?? ''
+            : captionFromPayload ?? media.placeholderContent
 
-      // Prefer the MIME we got back from R2 (authoritative — based on what
-      // Meta served), fall back to the webhook's hint if we never fetched.
-      const mediaMimeType =
-        media.mimeType ??
-        parsed.image?.mime_type ??
-        parsed.audio?.mime_type ??
-        parsed.video?.mime_type ??
-        parsed.document?.mime_type ??
-        null
+        // Prefer the MIME we got back from R2 (authoritative — based on what
+        // Meta served), fall back to the webhook's hint if we never fetched.
+        const mediaMimeType =
+          media.mimeType ??
+          parsed.image?.mime_type ??
+          parsed.audio?.mime_type ??
+          parsed.video?.mime_type ??
+          parsed.document?.mime_type ??
+          null
 
-      // Idempotency: ignore duplicate channelMessageId (Meta retries).
-      const existing = await db.query.messages.findFirst({
-        where: and(
-          eq(messages.tenantId, tenantId),
-          eq(messages.channelMessageId, parsed.messageId),
-        ),
-      })
-      if (existing) return { id: existing.id, deduped: true }
-
-      const [created] = await db
-        .insert(messages)
-        .values({
-          conversationId: conversation.id,
-          tenantId,
-          senderType: 'customer',
-          // Drizzle text column accepts string; widen via cast to avoid generic literal mismatch.
-          contentType: parsed.type,
-          content: msgContent,
-          mediaUrl: media.url ?? undefined,
-          mediaSize: media.size ?? undefined,
-          mediaMimeType: mediaMimeType ?? undefined,
-          mediaFilename: parsed.document?.filename ?? undefined,
-          channelMessageId: parsed.messageId,
-          channelStatus: 'delivered',
-          channelRawPayload: parsed.rawPayload,
-          sentAt: new Date(parseInt(parsed.timestamp, 10) * 1000),
+        // Idempotency: ignore duplicate channelMessageId (Meta retries).
+        const existing = await tx.query.messages.findFirst({
+          where: and(
+            eq(messages.tenantId, tenantId),
+            eq(messages.channelMessageId, parsed.messageId),
+          ),
         })
-        .returning({ id: messages.id })
+        if (existing) return { id: existing.id, deduped: true }
 
-      if (!created) throw new Error('whatsapp-incoming: failed to insert message')
+        const [created] = await tx
+          .insert(messages)
+          .values({
+            conversationId: conversation.id,
+            tenantId,
+            senderType: 'customer',
+            // Drizzle text column accepts string; widen via cast to avoid generic literal mismatch.
+            contentType: parsed.type,
+            content: msgContent,
+            mediaUrl: media.url ?? undefined,
+            mediaSize: media.size ?? undefined,
+            mediaMimeType: mediaMimeType ?? undefined,
+            mediaFilename: parsed.document?.filename ?? undefined,
+            channelMessageId: parsed.messageId,
+            channelStatus: 'delivered',
+            channelRawPayload: parsed.rawPayload,
+            sentAt: new Date(parseInt(parsed.timestamp, 10) * 1000),
+          })
+          .returning({ id: messages.id })
 
-      await db
-        .update(conversations)
-        .set({
-          turnCount: (conversation.turnCount ?? 0) + 1,
-          updatedAt: new Date(),
-        })
-        .where(eq(conversations.id, conversation.id))
+        if (!created) throw new Error('whatsapp-incoming: failed to insert message')
 
-      return { id: created.id, deduped: false }
-    })
+        await tx
+          .update(conversations)
+          .set({
+            turnCount: (conversation.turnCount ?? 0) + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(conversations.id, conversation.id))
+
+        return { id: created.id, deduped: false }
+      }),
+    )
 
     // 5. Fan-out: hand the AI pipeline the new message.
     await step.sendEvent('queue-ai', {

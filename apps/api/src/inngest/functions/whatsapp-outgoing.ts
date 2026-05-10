@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm'
-import { db, tenants, conversations, customers, messages } from '@sahay/db'
+import { tenants, conversations, customers, messages, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { WhatsAppAdapter, type WATemplateComponent } from '../../services/channels/whatsapp.adapter'
 import { env } from '../../lib/env'
@@ -49,23 +49,25 @@ export const whatsappOutgoing = inngest.createFunction(
   async ({ event, step, logger }) => {
     const { tenantId, to, content, templateName, templateParams } = event.data
 
-    const tenant = await step.run('load-tenant', async () => {
-      const row = await db.query.tenants.findFirst({
-        where: eq(tenants.id, tenantId),
-      })
-      if (!row) throw new Error(`whatsapp-outgoing: tenant ${tenantId} not found`)
-      if (!row.whatsappPhoneNumberId) {
-        throw new Error(`whatsapp-outgoing: tenant ${tenantId} has no WhatsApp phone number id`)
-      }
-      const accessToken = row.whatsappToken ?? env.WA_ACCESS_TOKEN ?? ''
-      if (!accessToken) {
-        throw new Error(`whatsapp-outgoing: tenant ${tenantId} has no WhatsApp access token`)
-      }
-      return {
-        phoneNumberId: row.whatsappPhoneNumberId,
-        accessToken,
-      }
-    })
+    const tenant = await step.run('load-tenant', async () =>
+      withTenant(tenantId, async (tx) => {
+        const row = await tx.query.tenants.findFirst({
+          where: eq(tenants.id, tenantId),
+        })
+        if (!row) throw new Error(`whatsapp-outgoing: tenant ${tenantId} not found`)
+        if (!row.whatsappPhoneNumberId) {
+          throw new Error(`whatsapp-outgoing: tenant ${tenantId} has no WhatsApp phone number id`)
+        }
+        const accessToken = row.whatsappToken ?? env.WA_ACCESS_TOKEN ?? ''
+        if (!accessToken) {
+          throw new Error(`whatsapp-outgoing: tenant ${tenantId} has no WhatsApp access token`)
+        }
+        return {
+          phoneNumberId: row.whatsappPhoneNumberId,
+          accessToken,
+        }
+      }),
+    )
 
     const sendResult = await step.run('send-message', async () => {
       const adapter = new WhatsAppAdapter(tenant.phoneNumberId, tenant.accessToken)
@@ -109,51 +111,53 @@ export const whatsappOutgoing = inngest.createFunction(
 
     // Try to find the most recent outbound (ai/agent) message for this
     // conversation so we can stamp it with the channel id + status.
-    await step.run('record-status', async () => {
-      const customer = await db.query.customers.findFirst({
-        where: and(eq(customers.tenantId, tenantId), eq(customers.whatsappId, to)),
-      })
-      if (!customer) {
-        logger.warn({ tenantId, to }, 'whatsapp-outgoing: no customer match — cannot stamp status')
-        return
-      }
-      const conv = await db.query.conversations.findFirst({
-        where: and(
-          eq(conversations.tenantId, tenantId),
-          eq(conversations.customerId, customer.id),
-          eq(conversations.channel, 'whatsapp'),
-        ),
-        orderBy: [desc(conversations.createdAt)],
-      })
-      if (!conv) return
-      const lastOutbound = await db.query.messages.findFirst({
-        where: and(
-          eq(messages.conversationId, conv.id),
-          eq(messages.tenantId, tenantId),
-        ),
-        orderBy: [desc(messages.createdAt)],
-      })
-      if (!lastOutbound) return
+    await step.run('record-status', async () =>
+      withTenant(tenantId, async (tx) => {
+        const customer = await tx.query.customers.findFirst({
+          where: and(eq(customers.tenantId, tenantId), eq(customers.whatsappId, to)),
+        })
+        if (!customer) {
+          logger.warn({ tenantId, to }, 'whatsapp-outgoing: no customer match — cannot stamp status')
+          return
+        }
+        const conv = await tx.query.conversations.findFirst({
+          where: and(
+            eq(conversations.tenantId, tenantId),
+            eq(conversations.customerId, customer.id),
+            eq(conversations.channel, 'whatsapp'),
+          ),
+          orderBy: [desc(conversations.createdAt)],
+        })
+        if (!conv) return
+        const lastOutbound = await tx.query.messages.findFirst({
+          where: and(
+            eq(messages.conversationId, conv.id),
+            eq(messages.tenantId, tenantId),
+          ),
+          orderBy: [desc(messages.createdAt)],
+        })
+        if (!lastOutbound) return
 
-      if (sendResult.ok) {
-        await db
-          .update(messages)
-          .set({
-            channelMessageId: sendResult.waMessageId ?? lastOutbound.channelMessageId,
-            channelStatus: 'sent',
-            channelError: null,
-          })
-          .where(eq(messages.id, lastOutbound.id))
-      } else {
-        await db
-          .update(messages)
-          .set({
-            channelStatus: 'failed',
-            channelError: sendResult.error,
-          })
-          .where(eq(messages.id, lastOutbound.id))
-      }
-    })
+        if (sendResult.ok) {
+          await tx
+            .update(messages)
+            .set({
+              channelMessageId: sendResult.waMessageId ?? lastOutbound.channelMessageId,
+              channelStatus: 'sent',
+              channelError: null,
+            })
+            .where(eq(messages.id, lastOutbound.id))
+        } else {
+          await tx
+            .update(messages)
+            .set({
+              channelStatus: 'failed',
+              channelError: sendResult.error,
+            })
+            .where(eq(messages.id, lastOutbound.id))
+        }
+      }),
+    )
 
     if (!sendResult.ok) {
       // Surface the failure so Inngest retries (subject to retries: 3) —
