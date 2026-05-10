@@ -1,4 +1,8 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
+
+const r = (rel: string): string =>
+  fileURLToPath(new URL(rel, import.meta.url))
 
 export default defineConfig({
   test: {
@@ -10,8 +14,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@sahay/db': '../../packages/db/src',
-      '@sahay/shared': '../../packages/shared/src',
+      '@sahay/db': r('../../packages/db/src'),
+      '@sahay/shared': r('../../packages/shared/src'),
     },
   },
 })

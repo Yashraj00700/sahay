@@ -30,7 +30,7 @@ import { analyzeSentiment, type SentimentResult } from './sentiment'
 import { retrieveContext, type RAGChunk } from './rag'
 import { decideRouting, type EscalationSignals } from './router'
 import type { IntentCategory, SentimentLevel } from '@sahay/shared'
-import { triggerToTenant } from '../../lib/pusher'
+import { triggerToTenant, triggerToConversation } from '../../lib/pusher'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -534,8 +534,8 @@ export async function runAIPipeline(
       .set({ humanTouched: true })
       .where(eq(conversations.id, conversationId))
 
-    if (io && routingResult.notifyNow) {
-      io.to(`tenant:${tenantId}`).emit('conversation:updated', {
+    if (routingResult.notifyNow) {
+      await triggerToTenant(tenantId, 'conversation:updated', {
         conversation: {
           id: conversationId,
           routingDecision: routingResult.decision,
@@ -593,10 +593,8 @@ export async function runAIPipeline(
   let rawResponse: string
 
   try {
-    if (io) {
-      io.to(`tenant:${tenantId}`).emit('ai:typing', { conversationId, isTyping: true })
-    }
-
+    // Note: 'ai:typing' is not in our typed RealtimeEvent union — it was a
+    // socket-only signal. Skipping pre-message typing indicator post-Pusher.
     const completion = await anthropic.messages.create({
       model,
       max_tokens: 1024,
@@ -609,9 +607,7 @@ export async function runAIPipeline(
     if (block.type !== 'text') throw new Error('[agent] Unexpected Claude response block type')
     rawResponse = block.text.trim()
   } finally {
-    if (io) {
-      io.to(`tenant:${tenantId}`).emit('ai:typing', { conversationId, isTyping: false })
-    }
+    // No-op (typing indicator handled client-side based on message events).
   }
 
   // ── Parse structured JSON response ────────────────────────────────────────
@@ -726,42 +722,40 @@ export async function runAIPipeline(
     )
   }
 
-  // ── Socket.io events ──────────────────────────────────────────────────────
+  // ── Realtime fan-out via Pusher ───────────────────────────────────────────
 
-  if (io) {
-    if (isAiDraft) {
-      io.to(`tenant:${tenantId}`).emit('ai:suggestion', {
+  if (isAiDraft) {
+    await triggerToConversation(conversationId, 'ai:suggestion', {
+      conversationId,
+      suggestion: {
         conversationId,
-        suggestion: {
-          conversationId,
-          suggestion: cleanResponse,
-          confidence: parsedResponse.confidence ?? intentResult.confidence,
-          language: effectiveLanguage,
-          intent: intentResult.intent,
-          citations,
-          model,
-          generatedAt: new Date().toISOString(),
-        },
-      })
-    } else {
-      io.to(`tenant:${tenantId}`).emit('message:new', {
+        suggestion: cleanResponse,
+        confidence: parsedResponse.confidence ?? intentResult.confidence,
+        language: effectiveLanguage,
+        intent: intentResult.intent,
+        citations,
+        model,
+        generatedAt: new Date().toISOString(),
+      },
+    })
+  } else {
+    await triggerToTenant(tenantId, 'message:new', {
+      conversationId,
+      message: {
+        id: messageId,
         conversationId,
-        message: {
-          id: messageId,
-          conversationId,
-          tenantId,
-          senderType: 'ai',
-          contentType: 'text',
-          content: cleanResponse,
-          isAiDraft: false,
-          aiConfidence: parsedResponse.confidence,
-          aiIntent: intentResult.intent,
-          aiCitedSources: citations,
-          channelStatus: 'sent',
-          sentAt: new Date().toISOString(),
-        },
-      })
-    }
+        tenantId,
+        senderType: 'ai',
+        contentType: 'text',
+        content: cleanResponse,
+        isAiDraft: false,
+        aiConfidence: parsedResponse.confidence,
+        aiIntent: intentResult.intent,
+        aiCitedSources: citations,
+        channelStatus: 'sent',
+        sentAt: new Date().toISOString(),
+      },
+    })
   }
 
   return {

@@ -151,7 +151,7 @@ export default async function handler(
     res.status(200).end()
     return
   }
-  const eventName: SahayEventName = TOPIC_TO_EVENT[topic]
+  const eventName: ShopifyInngestEvent = TOPIC_TO_EVENT[topic]
 
   // ─── 6. Parse JSON payload ────────────────────────────────────────────────
   let payload: Record<string, unknown>
@@ -208,7 +208,7 @@ interface DispatchInput {
  * so we route through a discriminated switch to preserve full type safety
  * without resorting to `any`.
  */
-async function dispatch(name: SahayEventName, input: DispatchInput): Promise<void> {
+async function dispatch(name: ShopifyInngestEvent, input: DispatchInput): Promise<void> {
   switch (name) {
     case 'shopify/orders.created':
     case 'shopify/orders.updated':
