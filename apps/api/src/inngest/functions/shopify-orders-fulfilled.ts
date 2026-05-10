@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm'
-import { db, orders, conversations } from '@sahay/db'
+import { orders, conversations, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { upsertOrder } from './shopify-orders-created'
 import { triggerToTenant, triggerToConversation } from '../../lib/pusher'
@@ -26,27 +26,31 @@ export const shopifyOrdersFulfilled = inngest.createFunction(
     await step.run('mark-fulfilled', async () => {
       const shopifyOrderId = String(payload['id'] ?? '')
       if (!shopifyOrderId) return
-      await db
-        .update(orders)
-        .set({
-          fulfillmentStatus: (payload['fulfillment_status'] as string | null) ?? 'fulfilled',
-          fulfilledAt: new Date(),
-          syncedAt: new Date(),
-        })
-        .where(
-          sql`${orders.tenantId} = ${tenantId} AND ${orders.shopifyOrderId} = ${shopifyOrderId}`,
-        )
+      await withTenant(tenantId, (tx) =>
+        tx
+          .update(orders)
+          .set({
+            fulfillmentStatus: (payload['fulfillment_status'] as string | null) ?? 'fulfilled',
+            fulfilledAt: new Date(),
+            syncedAt: new Date(),
+          })
+          .where(
+            sql`${orders.tenantId} = ${tenantId} AND ${orders.shopifyOrderId} = ${shopifyOrderId}`,
+          ),
+      )
     })
 
     await step.run('broadcast', async () => {
       const shopifyOrderId = String(payload['id'] ?? '')
       // Notify each open conversation linked to this Shopify order.
-      const linked = await db.query.conversations.findMany({
-        where: and(
-          eq(conversations.tenantId, tenantId),
-          eq(conversations.shopifyOrderId, shopifyOrderId),
-        ),
-      })
+      const linked = await withTenant(tenantId, (tx) =>
+        tx.query.conversations.findMany({
+          where: and(
+            eq(conversations.tenantId, tenantId),
+            eq(conversations.shopifyOrderId, shopifyOrderId),
+          ),
+        }),
+      )
       for (const conv of linked) {
         await triggerToConversation(conv.id, 'conversation:updated', {
           conversation: {

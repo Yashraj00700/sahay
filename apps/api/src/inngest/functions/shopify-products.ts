@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm'
-import { db, knowledgeChunks } from '@sahay/db'
+import { knowledgeChunks, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 
 /**
