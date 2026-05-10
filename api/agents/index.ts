@@ -5,7 +5,7 @@
 // in the app (this endpoint is for team management).
 
 import { db, agents } from '@sahay/db'
-import { and, eq, desc } from 'drizzle-orm'
+import { eq, desc } from 'drizzle-orm'
 import { defineAuthedHandler, requireRole } from '../../apps/api/src/lib/handler'
 import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
 
@@ -59,9 +59,6 @@ export default defineAuthedHandler(
       inviteSentAt: r.createdAt ? r.createdAt.toISOString() : null,
       createdAt: r.createdAt ? r.createdAt.toISOString() : null,
     }))
-
-    // Reference `and` so unused-import lint stays quiet across drizzle helpers
-    void and
 
     res.status(200).json({ agents: data })
   },
