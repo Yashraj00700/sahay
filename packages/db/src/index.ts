@@ -21,3 +21,4 @@ export const db = drizzle(queryClient, { schema, logger: process.env.NODE_ENV ==
 
 export * from './schema'
 export { schema }
+export { withTenant, withSystemBypass, type Tx } from './with-tenant'

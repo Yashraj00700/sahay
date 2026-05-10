@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { randomUUID } from 'node:crypto'
 import { ZodError, z } from 'zod'
-import { db, agents, tenants } from '@sahay/db'
+import { db, agents, tenants, withTenant as dbWithTenant, type Tx } from '@sahay/db'
 import { and, eq } from 'drizzle-orm'
 import { env } from './env'
 import { verifyAccessToken } from './jwt'
@@ -37,6 +37,22 @@ export interface RequestContext {
 export interface AuthedContext extends RequestContext {
   agent: AuthedAgent
   tenant: AuthedTenant
+  /**
+   * Run a callback inside a tenant-scoped transaction (Postgres RLS enforced
+   * via `app.tenant_id`). Use this for any DB access in NEW routes:
+   *
+   *   const rows = await ctx.withTenant((tx) =>
+   *     tx.query.conversations.findMany(...)
+   *   )
+   *
+   * Existing routes that import `{ db }` from '@sahay/db' continue to work
+   * (RLS does not activate without `set_config`), but they bypass the
+   * defense-in-depth check. Migrate them progressively.
+   *
+   * TODO(rls): once all routes use this helper, drop the un-scoped `db`
+   * export and switch the connection role to a non-BYPASSRLS role.
+   */
+  withTenant: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>
 }
 
 export type Handler = (
@@ -160,6 +176,10 @@ export function defineAuthedHandler(handler: AuthedHandler, opts: HandlerOptions
         aiTone: tenant.aiTone ?? 'warm',
         aiConfidenceThreshold: tenant.aiConfidenceThreshold ?? '0.75',
       },
+      // RLS-scoped DB helper. Each call opens a short transaction with
+      // `app.tenant_id` set to the authed tenant's id, so even a missing
+      // `WHERE tenant_id = ...` filter in route code cannot leak rows.
+      withTenant: (fn) => dbWithTenant(tenant.id, fn),
     }
     return handler(req, res, authedCtx)
   }, opts)
