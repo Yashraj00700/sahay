@@ -82,7 +82,11 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1, 'is required'),
   OPENAI_API_KEY: z.string().min(1, 'is required'),
 
-  // ─── STORAGE (Cloudflare R2 / S3) — optional in dev ─────
+  // ─── STORAGE (Cloudflare R2 / S3) ───────────────────────
+  // Optional in dev/test (the media adapter no-ops with a placeholder), but
+  // strictly required in production via the superRefine block below — any
+  // tenant on production WhatsApp/Instagram traffic will need these to
+  // download and re-host media uploads.
   R2_ACCOUNT_ID: z.string().min(1, 'is required').optional(),
   R2_ACCESS_KEY_ID: z.string().min(1, 'is required').optional(),
   R2_SECRET_ACCESS_KEY: z.string().min(1, 'is required').optional(),
@@ -105,6 +109,15 @@ const envSchema = z.object({
   INNGEST_EVENT_KEY: z.string().min(1, 'is required').optional(),
   INNGEST_SIGNING_KEY: z.string().min(1, 'is required').optional(),
 
+  // ─── WEB PUSH (VAPID) ───────────────────────────────────
+  // Optional in dev — without keys, the push pipeline degrades gracefully:
+  // /vapid-key returns null, the browser never tries to subscribe, and the
+  // inngest push function logs+returns instead of dispatching.
+  // Generate with: `npx web-push generate-vapid-keys`.
+  VAPID_PUBLIC_KEY: z.string().min(1, 'is required').optional(),
+  VAPID_PRIVATE_KEY: z.string().min(1, 'is required').optional(),
+  VAPID_SUBJECT: z.string().min(1, 'is required').default('mailto:noreply@sahay.ai'),
+
   // ─── MONITORING ─────────────────────────────────────────
   SENTRY_DSN: z.string().url('must be a valid Sentry DSN URL').optional(),
   // Build-time only: used by @sentry/cli to upload sourcemaps. Never read at
@@ -118,6 +131,26 @@ const envSchema = z.object({
 
   // ─── CORS ───────────────────────────────────────────────
   CORS_ORIGINS: z.string().min(1, 'is required'),
+}).superRefine((cfg, ctx) => {
+  // R2 / Cloudflare object storage is required in production. We collect a
+  // separate issue per missing variable so all are surfaced in one go.
+  if (cfg.NODE_ENV !== 'production') return;
+  const r2Required = [
+    'R2_ACCOUNT_ID',
+    'R2_ACCESS_KEY_ID',
+    'R2_SECRET_ACCESS_KEY',
+    'R2_BUCKET_NAME',
+    'R2_PUBLIC_URL',
+  ] as const;
+  for (const key of r2Required) {
+    if (!cfg[key]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: 'is required in production (set Cloudflare R2 credentials)',
+      });
+    }
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

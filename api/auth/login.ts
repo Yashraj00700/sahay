@@ -6,7 +6,12 @@ import { defineHandler, parseBody } from '../../apps/api/src/lib/handler'
 import { signAccessToken, signRefreshToken, accessTtlSec } from '../../apps/api/src/lib/jwt'
 import { auditAction } from '../../apps/api/src/services/audit'
 import { limits, enforce } from '../../apps/api/src/lib/rate-limit'
-import { AuthError } from '../../apps/api/src/lib/errors'
+import { AuthError, AppError } from '../../apps/api/src/lib/errors'
+import {
+  checkLockout,
+  recordFailedAttempt,
+  clearLockout,
+} from '../../apps/api/src/lib/login-lockout'
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -19,6 +24,27 @@ export default defineHandler(
   async (req, res, ctx) => {
     await enforce(limits.perIpAuth(), ctx.ip || 'unknown')
     const { email, password } = parseBody(LoginSchema, req.body)
+    const ip = ctx.ip || 'unknown'
+
+    // Brute-force lockout check BEFORE any DB lookup so we don't even
+    // confirm the email exists once the attacker is over threshold.
+    try {
+      await checkLockout({ email, ip })
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'FORBIDDEN') {
+        await auditAction({
+          actorType: 'system',
+          actorEmail: email.toLowerCase(),
+          action: 'auth.login.lockout_denied',
+          resourceType: 'agent',
+          ipAddress: ctx.ip,
+          userAgent: ctx.userAgent,
+          requestId: ctx.requestId,
+          metadata: { reason: 'lockout_threshold_exceeded' },
+        })
+      }
+      throw err
+    }
 
     const agent = await db.query.agents.findFirst({
       where: and(eq(agents.email, email.toLowerCase()), eq(agents.isActive, true)),
@@ -26,16 +52,30 @@ export default defineHandler(
 
     if (!agent || !agent.passwordHash) {
       await bcrypt.compare(password, TIMING_HASH)
+      await recordFailedAttempt({ email, ip })
       throw new AuthError('Invalid email or password')
     }
 
     const valid = await bcrypt.compare(password, agent.passwordHash)
-    if (!valid) throw new AuthError('Invalid email or password')
+    if (!valid) {
+      await recordFailedAttempt({ email, ip })
+      throw new AuthError('Invalid email or password')
+    }
 
     const tenant = await db.query.tenants.findFirst({
       where: and(eq(tenants.id, agent.tenantId), eq(tenants.isActive, true)),
     })
-    if (!tenant) throw new AuthError('Account inactive. Contact your administrator.')
+    if (!tenant) {
+      // Don't punish the user with a lockout counter for an admin-side
+      // tenant deactivation — but do clear any prior counters since the
+      // password itself was valid.
+      await clearLockout({ email, ip })
+      throw new AuthError('Account inactive. Contact your administrator.')
+    }
+
+    // Successful auth: wipe both counters BEFORE issuing tokens so that even
+    // if token-signing fails the user isn't left with stale failure counts.
+    await clearLockout({ email, ip })
 
     const payload = {
       agentId: agent.id,

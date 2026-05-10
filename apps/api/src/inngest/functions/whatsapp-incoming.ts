@@ -2,7 +2,10 @@ import { and, eq } from 'drizzle-orm'
 import { db, customers, conversations, messages } from '@sahay/db'
 import { normalizeIndianPhone } from '@sahay/shared'
 import { inngest } from '../client'
+import { env } from '../../lib/env'
 import { triggerToTenant } from '../../lib/pusher'
+import { fetchAndStoreWhatsAppMedia } from '../../services/channels/whatsapp.media'
+import { isR2Configured } from '../../services/storage/r2'
 
 /**
  * whatsapp-incoming
@@ -103,6 +106,95 @@ export const whatsappIncoming = inngest.createFunction(
       return { skipped: true }
     }
 
+    // 1b. If the inbound is a media message, fetch from Meta + re-host on R2.
+    //     We do this before inserting so the message row already carries the
+    //     final URL — UI never has to handle a transient "[loading]" state.
+    //     Failures are tolerated: we fall back to a placeholder content/url
+    //     so the rest of the pipeline (AI, realtime fan-out) keeps running.
+    type MediaInfo = {
+      url: string | null
+      mimeType: string | null
+      size: number | null
+      placeholderContent: string | null
+    }
+    const isMediaType =
+      parsed.type === 'image' ||
+      parsed.type === 'audio' ||
+      parsed.type === 'video' ||
+      parsed.type === 'document'
+
+    let media: MediaInfo = {
+      url: null,
+      mimeType: null,
+      size: null,
+      placeholderContent: null,
+    }
+
+    if (isMediaType) {
+      const mediaId =
+        parsed.image?.id ??
+        parsed.audio?.id ??
+        parsed.video?.id ??
+        parsed.document?.id ??
+        null
+
+      if (!mediaId) {
+        logger.warn(
+          { tenantId, type: parsed.type, channelMessageId: parsed.messageId },
+          'whatsapp-incoming: media message missing media id',
+        )
+        media = {
+          url: null,
+          mimeType: null,
+          size: null,
+          placeholderContent: '[media unavailable]',
+        }
+      } else if (!isR2Configured()) {
+        // Dev fallback: don't block the pipeline on missing R2 creds.
+        logger.warn(
+          { tenantId, mediaId },
+          'whatsapp-incoming: R2 not configured, skipping media download',
+        )
+        media = {
+          url: null,
+          mimeType: null,
+          size: null,
+          placeholderContent: '[dev: media skipped]',
+        }
+      } else {
+        media = await step.run('download-media', async (): Promise<MediaInfo> => {
+          try {
+            const result = await fetchAndStoreWhatsAppMedia({
+              mediaId,
+              accessToken: env.WA_ACCESS_TOKEN,
+              tenantId,
+              messageId: parsed.messageId,
+            })
+            return {
+              url: result.url,
+              mimeType: result.mimeType,
+              size: result.size,
+              placeholderContent: null,
+            }
+          } catch (err) {
+            // Swallow the error — we don't want media problems to fail the
+            // whole pipeline. The message will still be stored with a
+            // placeholder so agents see *something*.
+            logger.error(
+              { err, tenantId, mediaId, channelMessageId: parsed.messageId },
+              'whatsapp-incoming: media download failed',
+            )
+            return {
+              url: null,
+              mimeType: null,
+              size: null,
+              placeholderContent: '[media unavailable]',
+            }
+          }
+        })
+      }
+    }
+
     // 2. Find or create the customer record keyed by whatsappId.
     const customer = await step.run('upsert-customer', async () => {
       const normalizedPhone = normalizeIndianPhone(parsed.from)
@@ -172,8 +264,23 @@ export const whatsappIncoming = inngest.createFunction(
 
     // 4. Persist the message row + bump conversation turn count.
     const storedMessage = await step.run('insert-message', async () => {
-      const msgContent = parsed.type === 'text' ? parsed.text?.body ?? '' : null
+      // Text content stays as-is. Media messages either store the caption
+      // (image/video) or the failure placeholder so the dashboard always
+      // has *some* preview text to render.
+      const captionFromPayload =
+        parsed.image?.caption ??
+        parsed.video?.caption ??
+        null
+
+      const msgContent =
+        parsed.type === 'text'
+          ? parsed.text?.body ?? ''
+          : captionFromPayload ?? media.placeholderContent
+
+      // Prefer the MIME we got back from R2 (authoritative — based on what
+      // Meta served), fall back to the webhook's hint if we never fetched.
       const mediaMimeType =
+        media.mimeType ??
         parsed.image?.mime_type ??
         parsed.audio?.mime_type ??
         parsed.video?.mime_type ??
@@ -198,7 +305,10 @@ export const whatsappIncoming = inngest.createFunction(
           // Drizzle text column accepts string; widen via cast to avoid generic literal mismatch.
           contentType: parsed.type,
           content: msgContent,
+          mediaUrl: media.url ?? undefined,
+          mediaSize: media.size ?? undefined,
           mediaMimeType: mediaMimeType ?? undefined,
+          mediaFilename: parsed.document?.filename ?? undefined,
           channelMessageId: parsed.messageId,
           channelStatus: 'delivered',
           channelRawPayload: parsed.rawPayload,

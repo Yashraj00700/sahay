@@ -7,6 +7,7 @@ import { SentryErrorBoundary } from './lib/sentry'
 import { LoginPage } from './pages/auth/LoginPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
+import { AcceptInvitePage } from './pages/auth/AcceptInvitePage'
 
 // Onboarding
 import { OnboardingPage } from './pages/onboarding/OnboardingPage'
@@ -95,6 +96,7 @@ export default function App() {
         <Route path="/login" element={<AuthRoute><LoginPage /></AuthRoute>} />
         <Route path="/forgot-password" element={<AuthRoute><ForgotPasswordPage /></AuthRoute>} />
         <Route path="/reset-password" element={<AuthRoute><ResetPasswordPage /></AuthRoute>} />
+        <Route path="/auth/accept-invite" element={<AcceptInvitePage />} />
 
         {/* Onboarding — authenticated but separate layout */}
         <Route path="/onboarding/*" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />

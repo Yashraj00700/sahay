@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Building2, Bot, Users, Plug, Save,
-  Plus, Trash2, Eye, EyeOff, Check,
+  Plus, Trash2, Eye, EyeOff, Check, Bell, BellOff,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { cn } from '../../lib/utils'
+import { usePushNotifications } from '../../hooks/usePushNotifications'
+import { AgentsTab } from './AgentsTab'
 
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
 
@@ -455,13 +457,97 @@ function ChannelsTab() {
   )
 }
 
+// ─── Tab: Notifications ───────────────────────────────────────────────────────
+
+function NotificationsTab() {
+  const push = usePushNotifications()
+
+  // Status copy is calculated up-front so the JSX stays declarative.
+  let statusText: string
+  let statusTone: 'ok' | 'warn' | 'off'
+  if (!push.supported) {
+    statusText = 'This browser does not support push notifications.'
+    statusTone = 'off'
+  } else if (push.permission === 'denied') {
+    statusText = 'Notifications are blocked. Update site settings in your browser to re-enable.'
+    statusTone = 'warn'
+  } else if (push.subscribed) {
+    statusText = 'You will receive a push notification when a conversation needs attention.'
+    statusTone = 'ok'
+  } else {
+    statusText = 'Get notified about new conversations and mentions even when Sahay is in the background.'
+    statusTone = 'off'
+  }
+
+  const toneClass =
+    statusTone === 'ok' ? 'text-success'
+    : statusTone === 'warn' ? 'text-warning'
+    : 'text-text-secondary'
+
+  const buttonDisabled =
+    !push.supported || push.permission === 'denied' || push.loading
+
+  return (
+    <div className="max-w-xl space-y-5">
+      <div className="p-5 bg-surface border border-border rounded-xl space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+            {push.subscribed ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-text-primary">Browser notifications</p>
+            <p className={cn('text-xs mt-0.5', toneClass)}>{statusText}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {push.subscribed ? (
+            <button
+              type="button"
+              onClick={() => { void push.unsubscribe() }}
+              disabled={buttonDisabled}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-border text-text-primary',
+                'hover:bg-background transition-colors',
+                buttonDisabled && 'opacity-60 cursor-not-allowed',
+              )}
+            >
+              <BellOff className="w-4 h-4" />
+              {push.loading ? 'Disabling…' : 'Disable notifications'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { void push.subscribe() }}
+              disabled={buttonDisabled}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white',
+                'hover:bg-primary/90 transition-colors',
+                buttonDisabled && 'opacity-60 cursor-not-allowed',
+              )}
+            >
+              <Bell className="w-4 h-4" />
+              {push.loading ? 'Enabling…' : 'Enable notifications'}
+            </button>
+          )}
+
+          {push.error && (
+            <span className="text-xs text-error">{push.error}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const TABS = [
   { id: 'general', label: 'General', icon: Building2, component: GeneralTab },
   { id: 'ai', label: 'AI Settings', icon: Bot, component: AISettingsTab },
-  { id: 'team', label: 'Team', icon: Users, component: TeamTab },
+  { id: 'team', label: 'Team', icon: Users, component: AgentsTab },
   { id: 'channels', label: 'Channels', icon: Plug, component: ChannelsTab },
+  { id: 'notifications', label: 'Notifications', icon: Bell, component: NotificationsTab },
 ]
 
 export function SettingsPage() {

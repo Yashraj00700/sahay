@@ -2,6 +2,8 @@ import { and, eq } from 'drizzle-orm'
 import { db, customers, conversations, messages } from '@sahay/db'
 import { inngest } from '../client'
 import { triggerToTenant } from '../../lib/pusher'
+import { fetchAndStoreInstagramMedia } from '../../services/channels/instagram.media'
+import { isR2Configured } from '../../services/storage/r2'
 
 /**
  * instagram-incoming
@@ -97,6 +99,81 @@ export const instagramIncoming = inngest.createFunction(
       return { skipped: true }
     }
 
+    // 1b. If the inbound carries a media attachment, mirror the bytes to R2
+    //     so we keep them after Meta's CDN URL expires. We tolerate failures:
+    //     the message is still inserted (with the original IG URL as fallback)
+    //     so the agent dashboard never silently drops a customer message.
+    type IGMediaInfo = {
+      url: string | null
+      mimeType: string | null
+      size: number | null
+      placeholderContent: string | null
+    }
+
+    const isMediaType =
+      parsed.type === 'image' ||
+      parsed.type === 'audio' ||
+      parsed.type === 'video'
+
+    let media: IGMediaInfo = {
+      url: null,
+      mimeType: null,
+      size: null,
+      placeholderContent: null,
+    }
+
+    if (isMediaType && parsed.attachmentUrl) {
+      if (!isR2Configured()) {
+        logger.warn(
+          { tenantId, channelMessageId: parsed.messageId },
+          'instagram-incoming: R2 not configured, falling back to source URL',
+        )
+        media = {
+          // In dev, persist the (short-lived) source URL — it'll work for a
+          // few minutes which is enough to verify the pipeline locally.
+          url: parsed.attachmentUrl,
+          mimeType: parsed.attachmentMime ?? null,
+          size: null,
+          placeholderContent: '[dev: media skipped]',
+        }
+      } else {
+        media = await step.run('download-media', async (): Promise<IGMediaInfo> => {
+          try {
+            const result = await fetchAndStoreInstagramMedia({
+              payloadUrl: parsed.attachmentUrl as string,
+              tenantId,
+              messageId: parsed.messageId,
+              attachmentType:
+                parsed.type === 'image'
+                  ? 'image'
+                  : parsed.type === 'video'
+                  ? 'video'
+                  : parsed.type === 'audio'
+                  ? 'audio'
+                  : 'file',
+            })
+            return {
+              url: result.url,
+              mimeType: result.mimeType,
+              size: result.size,
+              placeholderContent: null,
+            }
+          } catch (err) {
+            logger.error(
+              { err, tenantId, channelMessageId: parsed.messageId },
+              'instagram-incoming: media download failed',
+            )
+            return {
+              url: null,
+              mimeType: null,
+              size: null,
+              placeholderContent: '[media unavailable]',
+            }
+          }
+        })
+      }
+    }
+
     const customer = await step.run('upsert-customer', async () => {
       const existing = await db.query.customers.findFirst({
         where: and(
@@ -166,7 +243,16 @@ export const instagramIncoming = inngest.createFunction(
       })
       if (existing) return { id: existing.id, deduped: true }
 
-      const msgContent = parsed.type === 'text' ? parsed.text ?? '' : null
+      const msgContent =
+        parsed.type === 'text'
+          ? parsed.text ?? ''
+          : media.placeholderContent
+
+      // R2-mirrored URL takes precedence; fall back to the (short-lived)
+      // source URL only when we couldn't (or didn't try to) re-host.
+      const finalMediaUrl = media.url ?? parsed.attachmentUrl ?? undefined
+      const finalMediaMime =
+        media.mimeType ?? parsed.attachmentMime ?? undefined
 
       const [created] = await db
         .insert(messages)
@@ -176,8 +262,9 @@ export const instagramIncoming = inngest.createFunction(
           senderType: 'customer',
           contentType: parsed.type,
           content: msgContent,
-          mediaUrl: parsed.attachmentUrl ?? undefined,
-          mediaMimeType: parsed.attachmentMime ?? undefined,
+          mediaUrl: finalMediaUrl,
+          mediaSize: media.size ?? undefined,
+          mediaMimeType: finalMediaMime,
           channelMessageId: parsed.messageId,
           channelStatus: 'delivered',
           channelRawPayload: parsed.rawPayload,

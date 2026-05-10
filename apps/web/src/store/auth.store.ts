@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Agent, Tenant } from '@sahay/shared'
 import { setSentryUser } from '../lib/sentry'
 import { disconnectPusher } from '../lib/pusher'
+import { unsubscribePush } from '../lib/push'
 
 interface AuthState {
   token: string | null
@@ -18,7 +19,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       token: null,
       refreshToken: null,
       agent: null,
@@ -37,7 +38,19 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         // Clear Sentry user + tear down the Pusher singleton so the next
-        // login establishes a fresh authenticated socket.
+        // login establishes a fresh authenticated socket. We also try to
+        // unsubscribe from web push (best-effort, fire-and-forget) so the
+        // server doesn't keep delivering notifications to a logged-out
+        // browser. The push unsubscribe needs the token, so it must run
+        // BEFORE we clear state.
+        const currentToken = get().token
+        if (currentToken) {
+          // Don't await — logout should be instant from the user's POV;
+          // the unsubscribe uses keepalive so it survives navigation.
+          void unsubscribePush(currentToken).catch(() => {
+            // swallow: we can't block logout on a network failure
+          })
+        }
         setSentryUser(null)
         disconnectPusher()
         set({ token: null, refreshToken: null, agent: null, tenant: null, isAuthenticated: false })
