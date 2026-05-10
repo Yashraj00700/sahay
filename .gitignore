@@ -44,8 +44,8 @@ coverage/
 # Docker volumes (local)
 .docker/
 
-# Drizzle generated
-drizzle/
+# Drizzle: commit migration files; ignore meta journal cache only
+packages/db/drizzle/meta/_journal_cache.json
 
 # Uploaded files (local dev)
 uploads/

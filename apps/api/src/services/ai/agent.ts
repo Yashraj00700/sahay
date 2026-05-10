@@ -30,6 +30,7 @@ import { analyzeSentiment, type SentimentResult } from './sentiment'
 import { retrieveContext, type RAGChunk } from './rag'
 import { decideRouting, type EscalationSignals } from './router'
 import type { IntentCategory, SentimentLevel } from '@sahay/shared'
+import { triggerToTenant } from '../../lib/pusher'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 

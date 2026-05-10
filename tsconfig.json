@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@sahay/shared": ["./packages/shared/src"],
+      "@sahay/shared/*": ["./packages/shared/src/*"],
+      "@sahay/db": ["./packages/db/src"],
+      "@sahay/db/*": ["./packages/db/src/*"],
+      "@sahay/api/*": ["./apps/api/src/*"]
+    }
+  },
+  "include": [
+    "api/**/*.ts",
+    "apps/api/src/**/*.ts",
+    "packages/db/src/**/*.ts",
+    "packages/shared/src/**/*.ts"
+  ],
+  "exclude": ["node_modules", "**/dist", "**/.turbo", "apps/web"]
+}

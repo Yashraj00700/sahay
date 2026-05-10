@@ -1,3 +1,9 @@
+// Sentry must initialize before any React imports so it can patch the
+// runtime and capture errors thrown during the very first render.
+// SentryErrorBoundary wrapping happens inside App.tsx around <Routes>.
+import { initSentry } from './lib/sentry'
+initSentry()
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'

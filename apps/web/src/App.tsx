@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/auth.store'
-import { useSocket } from './hooks/useSocket'
+import { useRealtime } from './hooks/useRealtime'
+import { SentryErrorBoundary } from './lib/sentry'
 
 // Auth
 import { LoginPage } from './pages/auth/LoginPage'
@@ -31,18 +32,64 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-// Initialize WebSocket connection for authenticated users
-function SocketInitializer() {
-  useSocket() // Connects once, persists across routes
+// Initialize realtime (Pusher) connection for authenticated users.
+// Mounted once at the App root so the singleton survives route changes.
+function RealtimeInitializer() {
+  useRealtime()
   return null
+}
+
+// Minimal fallback shown when an unhandled render error reaches the boundary.
+// Never renders the underlying error message in production to avoid leaking
+// stack traces to end users.
+function FallbackUI() {
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        fontFamily: '"Plus Jakarta Sans", sans-serif',
+        background: '#0D0B1A',
+        color: '#FFFFFF',
+        padding: '24px',
+        textAlign: 'center',
+      }}
+    >
+      <h1 style={{ fontSize: '20px', fontWeight: 600 }}>Something went wrong</h1>
+      <p style={{ fontSize: '14px', opacity: 0.8 }}>
+        Please refresh the page to continue.
+      </p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        style={{
+          marginTop: '8px',
+          padding: '10px 20px',
+          borderRadius: '10px',
+          border: 'none',
+          background: '#7C3AED',
+          color: '#FFFFFF',
+          fontSize: '14px',
+          fontWeight: 500,
+          cursor: 'pointer',
+        }}
+      >
+        Refresh
+      </button>
+    </div>
+  )
 }
 
 export default function App() {
   const { isAuthenticated } = useAuthStore()
 
   return (
-    <>
-      {isAuthenticated && <SocketInitializer />}
+    <SentryErrorBoundary fallback={<FallbackUI />}>
+      {isAuthenticated && <RealtimeInitializer />}
       <Routes>
         {/* Public routes */}
         <Route path="/login" element={<AuthRoute><LoginPage /></AuthRoute>} />
@@ -85,6 +132,6 @@ export default function App() {
         {/* 404 */}
         <Route path="*" element={<Navigate to="/inbox" replace />} />
       </Routes>
-    </>
+    </SentryErrorBoundary>
   )
 }
