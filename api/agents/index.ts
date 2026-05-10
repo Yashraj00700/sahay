@@ -4,7 +4,7 @@
 // Allowed roles: super_admin, admin. Lower roles see only themselves elsewhere
 // in the app (this endpoint is for team management).
 
-import { db, agents } from '@sahay/db'
+import { agents } from '@sahay/db'
 import { eq, desc } from 'drizzle-orm'
 import { defineAuthedHandler, requireRole } from '../../apps/api/src/lib/handler'
 import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
@@ -28,23 +28,25 @@ export default defineAuthedHandler(
     requireRole(ctx, ['super_admin', 'admin'])
     await enforce(limits.perTenant(), ctx.tenant.id)
 
-    const rows = await db
-      .select({
-        id: agents.id,
-        email: agents.email,
-        name: agents.name,
-        avatarUrl: agents.avatarUrl,
-        role: agents.role,
-        isActive: agents.isActive,
-        isOnline: agents.isOnline,
-        lastSeenAt: agents.lastSeenAt,
-        inviteToken: agents.inviteToken,
-        inviteAcceptedAt: agents.inviteAcceptedAt,
-        createdAt: agents.createdAt,
-      })
-      .from(agents)
-      .where(eq(agents.tenantId, ctx.tenant.id))
-      .orderBy(desc(agents.createdAt))
+    const rows = await ctx.withTenant((tx) =>
+      tx
+        .select({
+          id: agents.id,
+          email: agents.email,
+          name: agents.name,
+          avatarUrl: agents.avatarUrl,
+          role: agents.role,
+          isActive: agents.isActive,
+          isOnline: agents.isOnline,
+          lastSeenAt: agents.lastSeenAt,
+          inviteToken: agents.inviteToken,
+          inviteAcceptedAt: agents.inviteAcceptedAt,
+          createdAt: agents.createdAt,
+        })
+        .from(agents)
+        .where(eq(agents.tenantId, ctx.tenant.id))
+        .orderBy(desc(agents.createdAt)),
+    )
 
     const data: AgentSummary[] = rows.map((r) => ({
       id: r.id,

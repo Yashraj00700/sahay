@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { db, customers, conversations, messages } from '@sahay/db'
+import { customers, conversations, messages, withTenant } from '@sahay/db'
 import { normalizeIndianPhone } from '@sahay/shared'
 import { inngest } from '../client'
 import { env } from '../../lib/env'

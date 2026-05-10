@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { db, agents } from '@sahay/db'
+import { agents } from '@sahay/db'
 import { eq } from 'drizzle-orm'
 import { defineAuthedHandler, parseBody } from '../../apps/api/src/lib/handler'
 import { NotFoundError } from '../../apps/api/src/lib/errors'
@@ -29,21 +29,28 @@ export default defineAuthedHandler(
   async (req, res, ctx) => {
     const { endpoint } = parseBody(UnsubscribeSchema, req.body)
 
-    const row = await db.query.agents.findFirst({
-      where: eq(agents.id, ctx.agent.id),
+    const result = await ctx.withTenant(async (tx) => {
+      const row = await tx.query.agents.findFirst({
+        where: eq(agents.id, ctx.agent.id),
+      })
+      if (!row) throw new NotFoundError('Agent not found')
+
+      const existing = (row.pushSubscriptions ?? []) as StoredSubscription[]
+      const next = existing.filter((s) => s.endpoint !== endpoint)
+
+      if (next.length !== existing.length) {
+        await tx
+          .update(agents)
+          .set({ pushSubscriptions: next, updatedAt: new Date() })
+          .where(eq(agents.id, ctx.agent.id))
+        return { removed: true, remaining: next.length }
+      }
+      return { removed: false, remaining: next.length }
     })
-    if (!row) throw new NotFoundError('Agent not found')
 
-    const existing = (row.pushSubscriptions ?? []) as StoredSubscription[]
-    const next = existing.filter((s) => s.endpoint !== endpoint)
-
-    if (next.length !== existing.length) {
-      await db
-        .update(agents)
-        .set({ pushSubscriptions: next, updatedAt: new Date() })
-        .where(eq(agents.id, ctx.agent.id))
+    if (result.removed) {
       logger.info(
-        { agentId: ctx.agent.id, remaining: next.length },
+        { agentId: ctx.agent.id, remaining: result.remaining },
         'push: subscription removed',
       )
     }

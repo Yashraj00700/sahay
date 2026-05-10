@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { db, conversations, messages } from '@sahay/db'
+import { conversations, messages } from '@sahay/db'
 import { and, eq } from 'drizzle-orm'
 import { defineAuthedHandler, parseBody } from '../../../apps/api/src/lib/handler'
 import { enforce, limits } from '../../../apps/api/src/lib/rate-limit'
@@ -18,23 +18,29 @@ export default defineAuthedHandler(
 
     const body = parseBody(addNoteSchema, req.body)
 
-    const [conv] = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(and(eq(conversations.id, id), eq(conversations.tenantId, tenantId)))
-    if (!conv) throw new NotFoundError('Not found')
+    const note = await ctx.withTenant(async (tx) => {
+      const [conv] = await tx
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(
+          and(eq(conversations.id, id), eq(conversations.tenantId, tenantId)),
+        )
+      if (!conv) throw new NotFoundError('Not found')
 
-    const [note] = await db
-      .insert(messages)
-      .values({
-        conversationId: id,
-        tenantId,
-        senderType: 'agent',
-        senderId: ctx.agent.id,
-        contentType: 'note',
-        content: body.content,
-      })
-      .returning()
+      const [note] = await tx
+        .insert(messages)
+        .values({
+          conversationId: id,
+          tenantId,
+          senderType: 'agent',
+          senderId: ctx.agent.id,
+          contentType: 'note',
+          content: body.content,
+        })
+        .returning()
+
+      return note
+    })
 
     await triggerToTenant(
       tenantId,

@@ -6,7 +6,7 @@
 // promoted to isActive=true with a hashed password.
 
 import { z } from 'zod'
-import { db, agents, tenants } from '@sahay/db'
+import { agents, tenants } from '@sahay/db'
 import { and, eq } from 'drizzle-orm'
 import {
   defineAuthedHandler,
@@ -36,93 +36,109 @@ export default defineAuthedHandler(
 
     const body = parseBody(Schema, req.body)
 
-    // Block invite collisions with an active agent in the same tenant.
-    const existing = await db.query.agents.findFirst({
-      where: and(
-        eq(agents.tenantId, ctx.tenant.id),
-        eq(agents.email, body.email),
-      ),
-    })
-
-    if (existing && existing.isActive === true) {
-      throw new AppError(
-        'CONFLICT',
-        'An active agent with that email already exists in this tenant',
-        409,
-      )
-    }
-
-    if (existing && existing.isActive === false && existing.inviteToken) {
-      // Re-invite flow: refresh the existing token instead of inserting a duplicate.
-      const token = randomToken(32)
-      const expiresAt = new Date(Date.now() + INVITE_TTL_MS)
-      await db
-        .update(agents)
-        .set({
-          name: body.name,
-          role: body.role,
-          inviteToken: token,
-          inviteTokenExpiresAt: expiresAt,
-          invitedBy: ctx.agent.id,
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, existing.id))
-
-      await dispatchInvite({
-        token,
-        toEmail: body.email,
-        inviterName: ctx.agent.name,
-        tenantId: ctx.tenant.id,
-        agentId: existing.id,
-        actor: ctx,
-        action: 'agent.reinvited',
-      })
-
-      res.status(200).json({ success: true, agentId: existing.id, reinvited: true })
-      return
-    }
-
-    if (existing) {
-      // Inactive but no invite token (deactivated agent). Refuse to overwrite —
-      // admin should reactivate via PATCH instead of inviting fresh.
-      throw new ValidationError(
-        'An inactive agent with that email already exists; reactivate them instead.',
-      )
-    }
-
     const token = randomToken(32)
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS)
 
-    const [inserted] = await db
-      .insert(agents)
-      .values({
-        tenantId: ctx.tenant.id,
-        email: body.email,
-        name: body.name,
-        role: body.role,
-        passwordHash: null,
-        isActive: false,
-        inviteToken: token,
-        inviteTokenExpiresAt: expiresAt,
-        invitedBy: ctx.agent.id,
+    const result = await ctx.withTenant(async (tx) => {
+      // Block invite collisions with an active agent in the same tenant.
+      const existing = await tx.query.agents.findFirst({
+        where: and(
+          eq(agents.tenantId, ctx.tenant.id),
+          eq(agents.email, body.email),
+        ),
       })
-      .returning({ id: agents.id })
 
-    if (!inserted) {
-      throw new AppError('INTERNAL_ERROR', 'Failed to create agent', 500)
-    }
+      if (existing && existing.isActive === true) {
+        throw new AppError(
+          'CONFLICT',
+          'An active agent with that email already exists in this tenant',
+          409,
+        )
+      }
+
+      if (existing && existing.isActive === false && existing.inviteToken) {
+        // Re-invite flow: refresh the existing token instead of inserting a duplicate.
+        await tx
+          .update(agents)
+          .set({
+            name: body.name,
+            role: body.role,
+            inviteToken: token,
+            inviteTokenExpiresAt: expiresAt,
+            invitedBy: ctx.agent.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(agents.id, existing.id))
+
+        const tenant = await tx.query.tenants.findFirst({
+          where: eq(tenants.id, ctx.tenant.id),
+        })
+
+        return {
+          kind: 'reinvited' as const,
+          agentId: existing.id,
+          tenant,
+        }
+      }
+
+      if (existing) {
+        // Inactive but no invite token (deactivated agent). Refuse to overwrite —
+        // admin should reactivate via PATCH instead of inviting fresh.
+        throw new ValidationError(
+          'An inactive agent with that email already exists; reactivate them instead.',
+        )
+      }
+
+      const [inserted] = await tx
+        .insert(agents)
+        .values({
+          tenantId: ctx.tenant.id,
+          email: body.email,
+          name: body.name,
+          role: body.role,
+          passwordHash: null,
+          isActive: false,
+          inviteToken: token,
+          inviteTokenExpiresAt: expiresAt,
+          invitedBy: ctx.agent.id,
+        })
+        .returning({ id: agents.id })
+
+      if (!inserted) {
+        throw new AppError('INTERNAL_ERROR', 'Failed to create agent', 500)
+      }
+
+      const tenant = await tx.query.tenants.findFirst({
+        where: eq(tenants.id, ctx.tenant.id),
+      })
+
+      return {
+        kind: 'invited' as const,
+        agentId: inserted.id,
+        tenant,
+      }
+    })
 
     await dispatchInvite({
       token,
       toEmail: body.email,
       inviterName: ctx.agent.name,
       tenantId: ctx.tenant.id,
-      agentId: inserted.id,
+      tenantName:
+        result.tenant?.shopName ?? result.tenant?.shopifyDomain ?? 'Sahay',
+      agentId: result.agentId,
       actor: ctx,
-      action: 'agent.invited',
+      action: result.kind === 'reinvited' ? 'agent.reinvited' : 'agent.invited',
     })
 
-    res.status(200).json({ success: true, agentId: inserted.id })
+    if (result.kind === 'reinvited') {
+      res
+        .status(200)
+        .json({ success: true, agentId: result.agentId, reinvited: true })
+      return
+    }
+
+    res.status(200).json({ success: true, agentId: result.agentId })
   },
   { methods: ['POST'] },
 )
@@ -132,6 +148,7 @@ interface DispatchInviteArgs {
   toEmail: string
   inviterName: string
   tenantId: string
+  tenantName: string
   agentId: string
   actor: {
     agent: { id: string; email: string }
@@ -146,16 +163,10 @@ interface DispatchInviteArgs {
 async function dispatchInvite(args: DispatchInviteArgs): Promise<void> {
   const inviteUrl = `${env.WEB_URL.replace(/\/$/, '')}/auth/accept-invite?token=${args.token}`
 
-  // Look up tenant display name for the email body.
-  const tenant = await db.query.tenants.findFirst({
-    where: eq(tenants.id, args.tenantId),
-  })
-  const tenantName = tenant?.shopName ?? tenant?.shopifyDomain ?? 'Sahay'
-
   const result = await sendAgentInvite({
     to: args.toEmail,
     inviterName: args.inviterName,
-    tenantName,
+    tenantName: args.tenantName,
     inviteUrl,
     expiresInHours: 72,
   })

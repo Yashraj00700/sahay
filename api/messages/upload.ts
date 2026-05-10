@@ -26,7 +26,7 @@
  */
 
 import { z } from 'zod'
-import { db, conversations } from '@sahay/db'
+import { conversations } from '@sahay/db'
 import { and, eq } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 
@@ -101,16 +101,18 @@ export default defineAuthedHandler(
     const body = parseBody(uploadBodySchema, req.body)
 
     // Verify conversation belongs to caller's tenant.
-    const [conv] = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(
-        and(
-          eq(conversations.id, body.conversationId),
-          eq(conversations.tenantId, ctx.tenant.id),
-        ),
-      )
-      .limit(1)
+    const [conv] = await ctx.withTenant((tx) =>
+      tx
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.id, body.conversationId),
+            eq(conversations.tenantId, ctx.tenant.id),
+          ),
+        )
+        .limit(1),
+    )
 
     if (!conv) {
       throw new NotFoundError('Conversation not found')

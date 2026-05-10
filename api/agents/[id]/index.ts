@@ -7,7 +7,7 @@
 // cannot lock itself out.
 
 import { z } from 'zod'
-import { db, agents } from '@sahay/db'
+import { agents, type Tx } from '@sahay/db'
 import { and, eq, ne, count } from 'drizzle-orm'
 import {
   defineAuthedHandler,
@@ -40,12 +40,14 @@ export default defineAuthedHandler(
       throw new ValidationError('Missing agent id')
     }
 
-    const target = await db.query.agents.findFirst({
-      where: and(eq(agents.id, id), eq(agents.tenantId, ctx.tenant.id)),
-    })
-    if (!target) throw new NotFoundError('Agent not found')
-
     if (req.method === 'GET') {
+      const target = await ctx.withTenant((tx) =>
+        tx.query.agents.findFirst({
+          where: and(eq(agents.id, id), eq(agents.tenantId, ctx.tenant.id)),
+        }),
+      )
+      if (!target) throw new NotFoundError('Agent not found')
+
       res.status(200).json({
         agent: {
           id: target.id,
@@ -66,47 +68,57 @@ export default defineAuthedHandler(
 
     if (req.method === 'PATCH') {
       const body = parseBody(PatchSchema, req.body)
-      const updates: Record<string, unknown> = { updatedAt: new Date() }
 
-      if (body.name !== undefined) updates.name = body.name
-
-      if (body.role !== undefined && body.role !== target.role) {
-        // Super-admin role is reserved: only an existing super_admin can grant it.
-        if (body.role === 'super_admin' && ctx.agent.role !== 'super_admin') {
-          throw new AppError(
-            'FORBIDDEN',
-            'Only a super_admin may grant super_admin',
-            403,
-          )
-        }
-
-        // Block self-demotion if I'm the last super_admin in this tenant.
-        if (
-          target.id === ctx.agent.id &&
-          target.role === 'super_admin' &&
-          body.role !== 'super_admin'
-        ) {
-          await assertAnotherSuperAdminExists(ctx.tenant.id, target.id)
-        }
-
-        // Block demoting another super_admin if they are the only one left.
-        if (target.role === 'super_admin' && body.role !== 'super_admin') {
-          await assertAnotherSuperAdminExists(ctx.tenant.id, target.id)
-        }
-
-        updates.role = body.role
-      }
-
-      const [updated] = await db
-        .update(agents)
-        .set(updates)
-        .where(eq(agents.id, target.id))
-        .returning({
-          id: agents.id,
-          name: agents.name,
-          role: agents.role,
-          email: agents.email,
+      const { target, updated } = await ctx.withTenant(async (tx) => {
+        const target = await tx.query.agents.findFirst({
+          where: and(eq(agents.id, id), eq(agents.tenantId, ctx.tenant.id)),
         })
+        if (!target) throw new NotFoundError('Agent not found')
+
+        const updates: Record<string, unknown> = { updatedAt: new Date() }
+
+        if (body.name !== undefined) updates.name = body.name
+
+        if (body.role !== undefined && body.role !== target.role) {
+          // Super-admin role is reserved: only an existing super_admin can grant it.
+          if (body.role === 'super_admin' && ctx.agent.role !== 'super_admin') {
+            throw new AppError(
+              'FORBIDDEN',
+              'Only a super_admin may grant super_admin',
+              403,
+            )
+          }
+
+          // Block self-demotion if I'm the last super_admin in this tenant.
+          if (
+            target.id === ctx.agent.id &&
+            target.role === 'super_admin' &&
+            body.role !== 'super_admin'
+          ) {
+            await assertAnotherSuperAdminExists(tx, ctx.tenant.id, target.id)
+          }
+
+          // Block demoting another super_admin if they are the only one left.
+          if (target.role === 'super_admin' && body.role !== 'super_admin') {
+            await assertAnotherSuperAdminExists(tx, ctx.tenant.id, target.id)
+          }
+
+          updates.role = body.role
+        }
+
+        const [updated] = await tx
+          .update(agents)
+          .set(updates)
+          .where(eq(agents.id, target.id))
+          .returning({
+            id: agents.id,
+            name: agents.name,
+            role: agents.role,
+            email: agents.email,
+          })
+
+        return { target, updated }
+      })
 
       await auditAction({
         tenantId: ctx.tenant.id,
@@ -128,23 +140,32 @@ export default defineAuthedHandler(
     }
 
     if (req.method === 'DELETE') {
-      if (target.id === ctx.agent.id) {
-        throw new ValidationError('You cannot deactivate yourself')
-      }
-      if (target.role === 'super_admin') {
-        await assertAnotherSuperAdminExists(ctx.tenant.id, target.id)
-      }
-
-      await db
-        .update(agents)
-        .set({
-          isActive: false,
-          isOnline: false,
-          inviteToken: null,
-          inviteTokenExpiresAt: null,
-          updatedAt: new Date(),
+      const target = await ctx.withTenant(async (tx) => {
+        const target = await tx.query.agents.findFirst({
+          where: and(eq(agents.id, id), eq(agents.tenantId, ctx.tenant.id)),
         })
-        .where(eq(agents.id, target.id))
+        if (!target) throw new NotFoundError('Agent not found')
+
+        if (target.id === ctx.agent.id) {
+          throw new ValidationError('You cannot deactivate yourself')
+        }
+        if (target.role === 'super_admin') {
+          await assertAnotherSuperAdminExists(tx, ctx.tenant.id, target.id)
+        }
+
+        await tx
+          .update(agents)
+          .set({
+            isActive: false,
+            isOnline: false,
+            inviteToken: null,
+            inviteTokenExpiresAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(agents.id, target.id))
+
+        return target
+      })
 
       await auditAction({
         tenantId: ctx.tenant.id,
@@ -169,10 +190,11 @@ export default defineAuthedHandler(
 )
 
 async function assertAnotherSuperAdminExists(
+  tx: Tx,
   tenantId: string,
   excludeAgentId: string,
 ): Promise<void> {
-  const [row] = await db
+  const [row] = await tx
     .select({ count: count() })
     .from(agents)
     .where(

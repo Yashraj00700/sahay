@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { db, agents } from '@sahay/db'
+import { agents } from '@sahay/db'
 import { eq } from 'drizzle-orm'
 import { defineAuthedHandler, parseBody } from '../../apps/api/src/lib/handler'
 import { NotFoundError } from '../../apps/api/src/lib/errors'
@@ -36,29 +36,33 @@ export default defineAuthedHandler(
   async (req, res, ctx) => {
     const body = parseBody(SubscribeSchema, req.body)
 
-    const row = await db.query.agents.findFirst({
-      where: eq(agents.id, ctx.agent.id),
+    const next = await ctx.withTenant(async (tx) => {
+      const row = await tx.query.agents.findFirst({
+        where: eq(agents.id, ctx.agent.id),
+      })
+      if (!row) throw new NotFoundError('Agent not found')
+
+      const existing = (row.pushSubscriptions ?? []) as StoredSubscription[]
+      // Dedupe by endpoint: the same browser will produce a stable endpoint,
+      // so a re-subscribe is an in-place replace, never a duplicate fanout.
+      const filtered = existing.filter((s) => s.endpoint !== body.endpoint)
+      const next: StoredSubscription[] = [
+        ...filtered,
+        {
+          endpoint: body.endpoint,
+          keys: body.keys,
+          userAgent: body.userAgent,
+          createdAt: new Date().toISOString(),
+        },
+      ]
+
+      await tx
+        .update(agents)
+        .set({ pushSubscriptions: next, updatedAt: new Date() })
+        .where(eq(agents.id, ctx.agent.id))
+
+      return next
     })
-    if (!row) throw new NotFoundError('Agent not found')
-
-    const existing = (row.pushSubscriptions ?? []) as StoredSubscription[]
-    // Dedupe by endpoint: the same browser will produce a stable endpoint,
-    // so a re-subscribe is an in-place replace, never a duplicate fanout.
-    const filtered = existing.filter((s) => s.endpoint !== body.endpoint)
-    const next: StoredSubscription[] = [
-      ...filtered,
-      {
-        endpoint: body.endpoint,
-        keys: body.keys,
-        userAgent: body.userAgent,
-        createdAt: new Date().toISOString(),
-      },
-    ]
-
-    await db
-      .update(agents)
-      .set({ pushSubscriptions: next, updatedAt: new Date() })
-      .where(eq(agents.id, ctx.agent.id))
 
     logger.info(
       { agentId: ctx.agent.id, total: next.length },

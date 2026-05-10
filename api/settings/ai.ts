@@ -3,7 +3,7 @@
 // PATCH /api/settings/ai — admin-only; update tenant AI fields
 
 import { z } from 'zod'
-import { db, tenants } from '@sahay/db'
+import { tenants } from '@sahay/db'
 import { eq } from 'drizzle-orm'
 import {
   defineAuthedHandler,
@@ -30,9 +30,11 @@ export default defineAuthedHandler(
     await enforce(limits.perTenant(), ctx.tenant.id)
 
     if (req.method === 'GET') {
-      const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.id, ctx.tenant.id),
-      })
+      const tenant = await ctx.withTenant((tx) =>
+        tx.query.tenants.findFirst({
+          where: eq(tenants.id, ctx.tenant.id),
+        }),
+      )
       if (!tenant) throw new ValidationError('Tenant not found')
 
       res.status(200).json({
@@ -61,7 +63,9 @@ export default defineAuthedHandler(
         updates.aiConfidenceThreshold = body.aiConfidenceThreshold.toFixed(2)
       }
 
-      await db.update(tenants).set(updates).where(eq(tenants.id, ctx.tenant.id))
+      await ctx.withTenant((tx) =>
+        tx.update(tenants).set(updates).where(eq(tenants.id, ctx.tenant.id)),
+      )
 
       await auditAction({
         tenantId: ctx.tenant.id,

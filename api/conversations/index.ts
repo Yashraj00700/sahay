@@ -1,8 +1,9 @@
 import { z } from 'zod'
-import { db, conversations, customers, agents } from '@sahay/db'
+import { conversations, customers, agents } from '@sahay/db'
 import { and, eq, isNull, asc, desc, sql } from 'drizzle-orm'
 import { defineAuthedHandler, parseQuery } from '../../apps/api/src/lib/handler'
 import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
+import { auditConversationListRead } from '../../apps/api/src/lib/audit-helpers'
 
 const listQuerySchema = z.object({
   status:     z.enum(['open', 'pending', 'snoozed', 'resolved', 'closed', 'all']).default('open'),
@@ -37,43 +38,51 @@ export default defineAuthedHandler(
     const sortCol = sortColMap[q.sortBy]
     const sortFn = q.sortDir === 'asc' ? asc : desc
 
-    const [rows, countResult] = await Promise.all([
-      db.select({
-        id: conversations.id,
-        channel: conversations.channel,
-        status: conversations.status,
-        primaryIntent: conversations.primaryIntent,
-        sentiment: conversations.sentiment,
-        urgencyScore: conversations.urgencyScore,
-        aiHandled: conversations.aiHandled,
-        humanTouched: conversations.humanTouched,
-        assignedTo: conversations.assignedTo,
-        tags: conversations.tags,
-        turnCount: conversations.turnCount,
-        createdAt: conversations.createdAt,
-        updatedAt: conversations.updatedAt,
-        resolvedAt: conversations.resolvedAt,
-        customerId: customers.id,
-        customerName: customers.name,
-        customerPhone: customers.phone,
-        customerTier: customers.tier,
-        agentName: agents.name,
-      })
-        .from(conversations)
-        .leftJoin(customers, eq(conversations.customerId, customers.id))
-        .leftJoin(agents, eq(conversations.assignedTo, agents.id))
-        .where(and(...conditions))
-        .orderBy(sortFn(sortCol))
-        .limit(q.pageSize)
-        .offset(offset),
+    const [rows, countResult] = await ctx.withTenant((tx) =>
+      Promise.all([
+        tx
+          .select({
+            id: conversations.id,
+            channel: conversations.channel,
+            status: conversations.status,
+            primaryIntent: conversations.primaryIntent,
+            sentiment: conversations.sentiment,
+            urgencyScore: conversations.urgencyScore,
+            aiHandled: conversations.aiHandled,
+            humanTouched: conversations.humanTouched,
+            assignedTo: conversations.assignedTo,
+            tags: conversations.tags,
+            turnCount: conversations.turnCount,
+            createdAt: conversations.createdAt,
+            updatedAt: conversations.updatedAt,
+            resolvedAt: conversations.resolvedAt,
+            customerId: customers.id,
+            customerName: customers.name,
+            customerPhone: customers.phone,
+            customerTier: customers.tier,
+            agentName: agents.name,
+          })
+          .from(conversations)
+          .leftJoin(customers, eq(conversations.customerId, customers.id))
+          .leftJoin(agents, eq(conversations.assignedTo, agents.id))
+          .where(and(...conditions))
+          .orderBy(sortFn(sortCol))
+          .limit(q.pageSize)
+          .offset(offset),
 
-      db.select({ count: sql<number>`cast(count(*) as integer)` })
-        .from(conversations)
-        .where(and(...conditions)),
-    ])
+        tx
+          .select({ count: sql<number>`cast(count(*) as integer)` })
+          .from(conversations)
+          .where(and(...conditions)),
+      ]),
+    )
 
     const total = countResult[0]?.count ?? 0
     const totalPages = Math.ceil(total / q.pageSize)
+
+    // DPDP/GDPR read audit — fire-and-forget after a successful DB read,
+    // before responding so a logged-but-failed-to-respond is a clean trace.
+    void auditConversationListRead(ctx, q)
 
     res.status(200).json({
       data: rows,

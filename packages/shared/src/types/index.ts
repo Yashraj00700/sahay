@@ -253,6 +253,57 @@ export interface ClientToServerEvents {
 // Flat union type for backwards compat
 export type SocketEvents = ServerToClientEvents & ClientToServerEvents
 
+// ─── Search ────────────────────────────────────────────────────
+export type SearchResultType = 'all' | 'conversations' | 'customers'
+
+/**
+ * A single conversation hit in /api/search results. Lighter than a full
+ * Conversation: includes only the fields the Command Palette / global search
+ * UI need to render a row + open the thread on click.
+ */
+export interface MessageSearchResult {
+  conversationId: string
+  channel: Channel
+  status: ConversationStatus
+  primaryIntent?: string
+  customerId: string
+  customerName?: string
+  customerPhone?: string
+  customerTier: CustomerTier
+  /** Best-matching message snippet (the one ts_rank_cd put on top). */
+  snippet?: string
+  /** When the matching message was sent (used for sort + UI grouping). */
+  matchedAt?: string
+  /** ts_rank_cd score [0, ~1+]. Higher = better match. Useful for debug. */
+  rank: number
+}
+
+export interface CustomerSearchResult {
+  id: string
+  name?: string
+  phone?: string
+  email?: string
+  city?: string
+  tier: CustomerTier
+  totalOrders: number
+}
+
+export interface SearchResponse {
+  results: {
+    conversations: MessageSearchResult[]
+    customers: CustomerSearchResult[]
+  }
+  pagination: {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+    hasNextPage: boolean
+    hasPreviousPage: boolean
+  }
+  tookMs: number
+}
+
 // ─── API Responses ─────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   data: T[]

@@ -8,10 +8,13 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
-import { queryKeys } from '../../lib/queryClient'
 import { useAuthStore } from '../../store/auth.store'
 import { useInboxStore } from '../../store/inbox.store'
-import type { Conversation, Customer } from '@sahay/shared'
+import type {
+  CustomerSearchResult,
+  MessageSearchResult,
+  SearchResponse,
+} from '@sahay/shared'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -166,28 +169,22 @@ export function CommandPalette({ isOpen: isOpenProp, onClose: onCloseProp, onSel
     }
   }, [isOpen])
 
-  // Fetch conversations for search
-  const { data: convData } = useQuery({
-    queryKey: queryKeys.conversations.list(tenant?.id ?? '', { search: query, limit: 5 }),
+  // Postgres FTS-backed typeahead. /api/search/suggest is debounced via the
+  // 150ms `staleTime` + React's render coalescing; keystrokes that fire while
+  // an in-flight request is still pending get the cached result. The endpoint
+  // is cheap (capped at 5 hits per type) so we don't manually debounce here.
+  const { data: searchData } = useQuery<SearchResponse>({
+    queryKey: ['search-suggest', tenant?.id ?? '', query],
     queryFn: async () => {
-      const res = await api.get('/conversations', { params: { search: query, limit: 5 } })
+      const res = await api.get<SearchResponse>('/search/suggest', { params: { q: query } })
       return res.data
     },
     enabled: !!tenant?.id && query.length > 1,
+    staleTime: 5_000,
   })
 
-  // Fetch customers for search
-  const { data: custData } = useQuery({
-    queryKey: queryKeys.customers.all(tenant?.id ?? ''),
-    queryFn: async () => {
-      const res = await api.get('/customers', { params: { search: query, limit: 5 } })
-      return res.data
-    },
-    enabled: !!tenant?.id && query.length > 1,
-  })
-
-  const conversations: Conversation[] = convData?.data ?? []
-  const customers: Customer[] = custData?.data ?? []
+  const conversations: MessageSearchResult[] = searchData?.results.conversations ?? []
+  const customers: CustomerSearchResult[] = searchData?.results.customers ?? []
 
   // Quick actions
   const quickActions: QuickAction[] = [
@@ -257,7 +254,7 @@ export function CommandPalette({ isOpen: isOpenProp, onClose: onCloseProp, onSel
       if (item.type === 'conversation') {
         const q = query.trim()
         if (q) addRecent(q)
-        onSelectConversation((item.data as Conversation).id)
+        onSelectConversation((item.data as MessageSearchResult).conversationId)
         onClose()
       } else if (item.type === 'action') {
         (item.data as QuickAction).action()
@@ -353,11 +350,11 @@ export function CommandPalette({ isOpen: isOpenProp, onClose: onCloseProp, onSel
                     const idx = itemIndex++
                     return (
                       <ResultItem
-                        key={conv.id}
+                        key={conv.conversationId}
                         isSelected={selectedIndex === idx}
                         icon={<MessageSquare className="w-4 h-4" />}
-                        primary={conv.customer?.name ?? 'Unknown'}
-                        secondary={conv.lastMessage?.content?.slice(0, 60)}
+                        primary={conv.customerName ?? conv.customerPhone ?? 'Unknown'}
+                        secondary={conv.snippet?.slice(0, 60)}
                         badge={
                           <span className={clsx(
                             'text-[9px] font-semibold px-1.5 py-0.5 rounded-full',
@@ -368,7 +365,7 @@ export function CommandPalette({ isOpen: isOpenProp, onClose: onCloseProp, onSel
                         }
                         onClick={() => {
                           if (query.trim()) addRecent(query.trim())
-                          onSelectConversation(conv.id)
+                          onSelectConversation(conv.conversationId)
                           onClose()
                         }}
                       />
@@ -392,7 +389,7 @@ export function CommandPalette({ isOpen: isOpenProp, onClose: onCloseProp, onSel
                         secondary={[cust.email, cust.city].filter(Boolean).join(' · ')}
                         badge={
                           cust.tier !== 'new'
-                            ? <span className="text-[10px]">{cust.tier === 'vip' ? '👑' : '⭐'}</span>
+                            ? <span className="text-[10px]">{cust.tier === 'vip' ? 'VIP' : 'LOYAL'}</span>
                             : undefined
                         }
                         onClick={() => {

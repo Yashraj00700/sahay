@@ -1,4 +1,4 @@
-import { db, conversations } from '@sahay/db'
+import { conversations } from '@sahay/db'
 import { and, eq } from 'drizzle-orm'
 import { defineAuthedHandler } from '../../../apps/api/src/lib/handler'
 import { enforce, limits } from '../../../apps/api/src/lib/rate-limit'
@@ -11,24 +11,30 @@ export default defineAuthedHandler(
     const id = req.query.id as string
     const tenantId = ctx.tenant.id
 
-    const [existing] = await db
-      .select({ createdAt: conversations.createdAt })
-      .from(conversations)
-      .where(and(eq(conversations.id, id), eq(conversations.tenantId, tenantId)))
-    if (!existing) throw new NotFoundError('Not found')
+    const updated = await ctx.withTenant(async (tx) => {
+      const [existing] = await tx
+        .select({ createdAt: conversations.createdAt })
+        .from(conversations)
+        .where(
+          and(eq(conversations.id, id), eq(conversations.tenantId, tenantId)),
+        )
+      if (!existing) throw new NotFoundError('Not found')
 
-    const [updated] = await db
-      .update(conversations)
-      .set({
-        status: 'resolved',
-        resolvedAt: new Date(),
-        resolutionTimeSeconds: Math.floor(
-          (Date.now() - (existing.createdAt?.getTime() ?? Date.now())) / 1000,
-        ),
-        updatedAt: new Date(),
-      })
-      .where(eq(conversations.id, id))
-      .returning()
+      const [updated] = await tx
+        .update(conversations)
+        .set({
+          status: 'resolved',
+          resolvedAt: new Date(),
+          resolutionTimeSeconds: Math.floor(
+            (Date.now() - (existing.createdAt?.getTime() ?? Date.now())) / 1000,
+          ),
+          updatedAt: new Date(),
+        })
+        .where(eq(conversations.id, id))
+        .returning()
+
+      return updated
+    })
 
     await triggerToTenant(
       tenantId,
