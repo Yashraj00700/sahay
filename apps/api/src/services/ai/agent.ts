@@ -32,6 +32,7 @@ import { decideRouting, type EscalationSignals } from './router'
 import type { IntentCategory, SentimentLevel } from '@sahay/shared'
 import { triggerToTenant, triggerToConversation } from '../../lib/pusher'
 import { env } from '../../lib/env'
+import { getVariant, recordOutcome } from './experiments'
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
@@ -272,9 +273,33 @@ interface SystemPromptContext {
   customerTier: string
   totalOrders: number
   totalSpent: string
+  /**
+   * Optional A/B experiment overrides — when an experiment variant is active
+   * for this conversation, its `config` blob lands here. None of these fields
+   * change behaviour when undefined, so the no-experiment path is byte-
+   * identical to pre-A/B-harness behaviour.
+   */
+  experimentOverrides?: {
+    /** If set, replaces the entire system prompt. */
+    systemPromptOverride?: string
+    /** Override the rendered tone description. */
+    tone?: string
+    /** Append extra Hinglish examples after the canonical block. */
+    examples?: string
+    /** Append free-form additional instructions before "Response Format". */
+    extraInstructions?: string
+  }
 }
 
 function buildSystemPrompt(ctx: SystemPromptContext): string {
+  // Full-override path: experiments can replace the entire prompt verbatim.
+  // Only triggered when the variant config explicitly sets it — no-op for
+  // the default (no-experiment) call site.
+  const override = ctx.experimentOverrides?.systemPromptOverride
+  if (typeof override === 'string' && override.trim().length > 0) {
+    return override
+  }
+
   const toneDescriptions: Record<string, string> = {
     formal: 'professional, respectful, precise — avoid slang',
     warm: 'friendly, empathetic, caring — like a helpful friend at the brand',
@@ -309,18 +334,30 @@ function buildSystemPrompt(ctx: SystemPromptContext): string {
     ? `\n## PREFER these phrases\n${ctx.preferredPhrases.map(p => `- "${p}"`).join('\n')}`
     : ''
 
+  // Experiment-driven additions. Each is `''` when the override is absent,
+  // making the rendered prompt byte-identical to the pre-experiment build.
+  const toneLine = ctx.experimentOverrides?.tone
+    ? ctx.experimentOverrides.tone
+    : (toneDescriptions[ctx.aiTone] ?? toneDescriptions['warm'])
+  const extraExamples = ctx.experimentOverrides?.examples
+    ? `\n\n${ctx.experimentOverrides.examples}`
+    : ''
+  const extraInstructions = ctx.experimentOverrides?.extraInstructions
+    ? `\n\n## Additional Instructions\n${ctx.experimentOverrides.extraInstructions}`
+    : ''
+
   return `You are ${ctx.personaName}, a customer support specialist for ${ctx.brandName}.
 
 ## Language
 ${langInstruction}
 
 ## Brand Voice & Tone
-Tone: ${toneDescriptions[ctx.aiTone] ?? toneDescriptions['warm']}
+Tone: ${toneLine}
 ${ctx.brandVoice ? `Brand Voice Notes: ${ctx.brandVoice}` : ''}
 ${prohibited}
 ${preferred}
 
-${HINGLISH_EXAMPLES}
+${HINGLISH_EXAMPLES}${extraExamples}
 
 ## MANDATORY Compliance Rules
 - NEVER make medical claims. Use cosmetic language only:
@@ -350,6 +387,7 @@ ${ragXml}
 <shopify_order>
 ${shopifyJson}
 </shopify_order>
+${extraInstructions}
 
 ## Response Format
 Return ONLY a valid JSON object:
@@ -483,6 +521,18 @@ export async function runAIPipeline(
     language: effectiveLanguage !== 'other' ? effectiveLanguage : undefined,
   })
 
+  // ── A/B experiment lookup (sticky per conversation) ──────────────────────
+  // Fetched here so we can use the variant config when building the system
+  // prompt below AND when recording outcome metrics for this turn.
+  // `null` → no active experiment for this tenant — fall through to default
+  // behaviour (the rest of the pipeline is unchanged in that case).
+  const experimentSelection = await getVariant({
+    experimentKey: 'system_prompt',
+    tenantId,
+    subjectType: 'conversation',
+    subjectId: conversationId,
+  })
+
   // ── Step 8: Routing decision ──────────────────────────────────────────────
 
   const escalationSignals: EscalationSignals = {
@@ -530,6 +580,15 @@ export async function runAIPipeline(
     routingResult.decision === 'route_to_human' ||
     routingResult.decision === 'route_to_senior'
   ) {
+    // Record escalation outcome for the active experiment, if any.
+    if (experimentSelection) {
+      void recordOutcome({
+        assignmentId: experimentSelection.assignmentId,
+        metric: 'escalated',
+        value: 1,
+      })
+    }
+
     await db
       .update(conversations)
       .set({ humanTouched: true })
@@ -571,6 +630,25 @@ export async function runAIPipeline(
 
   // ── Step 9: Generate AI response ──────────────────────────────────────────
 
+  // Pluck supported override fields from the variant config — anything else
+  // is ignored. Strings only; we never blindly trust the JSON shape.
+  const expCfg = experimentSelection?.config ?? {}
+  const experimentOverrides: SystemPromptContext['experimentOverrides'] | undefined =
+    experimentSelection
+      ? {
+          systemPromptOverride:
+            typeof expCfg.systemPromptOverride === 'string'
+              ? expCfg.systemPromptOverride
+              : undefined,
+          tone: typeof expCfg.tone === 'string' ? expCfg.tone : undefined,
+          examples: typeof expCfg.examples === 'string' ? expCfg.examples : undefined,
+          extraInstructions:
+            typeof expCfg.extraInstructions === 'string'
+              ? expCfg.extraInstructions
+              : undefined,
+        }
+      : undefined
+
   const systemPrompt = buildSystemPrompt({
     personaName: tenant.aiPersonaName ?? 'Sahay',
     brandName: tenant.shopName,
@@ -585,6 +663,7 @@ export async function runAIPipeline(
     customerTier: customer?.tier ?? 'new',
     totalOrders: customer?.totalOrders ?? 0,
     totalSpent: String(customer?.totalSpent ?? '0'),
+    experimentOverrides,
   })
 
   const model = SIMPLE_INTENTS.has(intentResult.intent)
@@ -654,6 +733,14 @@ export async function runAIPipeline(
   // 2. PII safety check
   if (containsPII(responseText)) {
     console.error(`[agent] PII in AI response — routing to human (conversation ${conversationId})`)
+
+    if (experimentSelection) {
+      void recordOutcome({
+        assignmentId: experimentSelection.assignmentId,
+        metric: 'escalated',
+        value: 1,
+      })
+    }
 
     await db
       .update(conversations)
@@ -758,6 +845,28 @@ export async function runAIPipeline(
       },
     })
   }
+
+  // Record turn-count outcome for the active experiment (auto_respond /
+  // draft_for_review only — escalation paths returned earlier).
+  // We just incremented turnCount via SQL — use the prior value + 1 so we
+  // don't need an extra SELECT.
+  if (experimentSelection) {
+    const newTurnCount = (conversation.turnCount ?? 0) + 1
+    void recordOutcome({
+      assignmentId: experimentSelection.assignmentId,
+      metric: 'turn_count',
+      value: newTurnCount,
+    })
+  }
+
+  // TODO(experiments): CSAT outcome is recorded outside this file — when the
+  // customer submits a CSAT score (conversations.csat_score), call:
+  //   const a = await findAssignment({ experimentKey: 'system_prompt',
+  //     tenantId, subjectType: 'conversation', subjectId: conversationId })
+  //   if (a) await recordOutcome({ assignmentId: a.assignmentId,
+  //     metric: 'csat', value: csatScore })
+  // Hook this in at the CSAT-capture endpoint (e.g. webhook / customer reply
+  // handler) once that flow exists.
 
   return {
     conversationId,

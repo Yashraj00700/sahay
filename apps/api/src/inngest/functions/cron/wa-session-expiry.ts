@@ -1,5 +1,5 @@
 import { and, eq, lt, sql } from 'drizzle-orm'
-import { db, conversations } from '@sahay/db'
+import { db, conversations, withSystemBypass } from '@sahay/db'
 import { inngest } from '../../client'
 import { triggerToTenant } from '../../../lib/pusher'
 
@@ -18,37 +18,41 @@ export const waSessionExpiry = inngest.createFunction(
   async ({ step, logger }) => {
     const now = new Date()
 
-    const expired = await step.run('find-expired', async () => {
-      return db
-        .select({
-          id: conversations.id,
-          tenantId: conversations.tenantId,
-        })
-        .from(conversations)
-        .where(
-          and(
-            eq(conversations.channel, 'whatsapp'),
-            eq(conversations.status, 'open'),
-            lt(conversations.sessionExpiresAt, now),
-          ),
-        )
-        .limit(500) // bound batch size for predictable runtime
-    })
+    const expired = await step.run('find-expired', async () =>
+      withSystemBypass(() =>
+        db
+          .select({
+            id: conversations.id,
+            tenantId: conversations.tenantId,
+          })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.channel, 'whatsapp'),
+              eq(conversations.status, 'open'),
+              lt(conversations.sessionExpiresAt, now),
+            ),
+          )
+          .limit(500), // bound batch size for predictable runtime
+      ),
+    )
 
     if (expired.length === 0) return { closed: 0 }
 
-    await step.run('close-conversations', async () => {
-      const ids = expired.map((c) => c.id)
-      await db
-        .update(conversations)
-        .set({ status: 'closed', updatedAt: now })
-        .where(
-          sql`${conversations.id} IN (${sql.join(
-            ids.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-        )
-    })
+    await step.run('close-conversations', async () =>
+      withSystemBypass(async () => {
+        const ids = expired.map((c) => c.id)
+        await db
+          .update(conversations)
+          .set({ status: 'closed', updatedAt: now })
+          .where(
+            sql`${conversations.id} IN (${sql.join(
+              ids.map((id) => sql`${id}`),
+              sql`, `,
+            )})`,
+          )
+      }),
+    )
 
     // Group by tenant for efficient realtime fan-out.
     const byTenant = new Map<string, string[]>()

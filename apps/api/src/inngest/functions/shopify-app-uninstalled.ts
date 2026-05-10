@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { db, tenants } from '@sahay/db'
+import { tenants, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { auditAction } from '../../services/audit'
 
@@ -23,16 +23,18 @@ export const shopifyAppUninstalled = inngest.createFunction(
     const { tenantId, shop } = event.data
 
     await step.run('mark-uninstalled', async () => {
-      await db
-        .update(tenants)
-        .set({
-          isActive: false,
-          shopifyAccessToken: '',
-          whatsappToken: null,
-          instagramToken: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(tenants.id, tenantId))
+      await withTenant(tenantId, (tx) =>
+        tx
+          .update(tenants)
+          .set({
+            isActive: false,
+            shopifyAccessToken: '',
+            whatsappToken: null,
+            instagramToken: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(tenants.id, tenantId)),
+      )
     })
 
     await step.run('audit', async () => {

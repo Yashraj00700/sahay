@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, ne } from 'drizzle-orm'
-import { db, tenants } from '@sahay/db'
+import { db, tenants, withSystemBypass } from '@sahay/db'
 import { inngest } from '../../client'
 
 /**
@@ -15,18 +15,20 @@ export const kbRefresh = inngest.createFunction(
   { id: 'cron-kb-refresh', retries: 1 },
   { cron: '0 3 * * *' },
   async ({ step, logger }) => {
-    const tenantList = await step.run('list-tenants', async () => {
-      return db
-        .select({ id: tenants.id, shopifyDomain: tenants.shopifyDomain })
-        .from(tenants)
-        .where(
-          and(
-            eq(tenants.isActive, true),
-            isNotNull(tenants.shopifyAccessToken),
-            ne(tenants.shopifyAccessToken, ''),
+    const tenantList = await step.run('list-tenants', async () =>
+      withSystemBypass(() =>
+        db
+          .select({ id: tenants.id, shopifyDomain: tenants.shopifyDomain })
+          .from(tenants)
+          .where(
+            and(
+              eq(tenants.isActive, true),
+              isNotNull(tenants.shopifyAccessToken),
+              ne(tenants.shopifyAccessToken, ''),
+            ),
           ),
-        )
-    })
+      ),
+    )
 
     let scheduled = 0
     for (const t of tenantList) {

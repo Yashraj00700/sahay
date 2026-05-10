@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { db, agents } from '@sahay/db'
+import { agents, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import {
   sendPush,
@@ -71,21 +71,23 @@ export const notificationsPush = inngest.createFunction(
   async ({ event, step, logger }) => {
     const { tenantId, agentId, title, body, url } = event.data
 
-    const agent = await step.run('load-agent', async () => {
-      const row = await db.query.agents.findFirst({
-        where: eq(agents.id, agentId),
-      })
-      if (!row) throw new Error(`notifications-push: agent ${agentId} not found`)
-      if (row.tenantId !== tenantId) {
-        throw new Error(
-          `notifications-push: agent ${agentId} belongs to a different tenant`,
-        )
-      }
-      return {
-        id: row.id,
-        pushSubscriptions: (row.pushSubscriptions ?? []) as PushSubscriptionShape[],
-      }
-    })
+    const agent = await step.run('load-agent', async () =>
+      withTenant(tenantId, async (tx) => {
+        const row = await tx.query.agents.findFirst({
+          where: eq(agents.id, agentId),
+        })
+        if (!row) throw new Error(`notifications-push: agent ${agentId} not found`)
+        if (row.tenantId !== tenantId) {
+          throw new Error(
+            `notifications-push: agent ${agentId} belongs to a different tenant`,
+          )
+        }
+        return {
+          id: row.id,
+          pushSubscriptions: (row.pushSubscriptions ?? []) as PushSubscriptionShape[],
+        }
+      }),
+    )
 
     if (agent.pushSubscriptions.length === 0) {
       logger.info({ tenantId, agentId }, 'notifications-push: no subscriptions')
@@ -134,10 +136,12 @@ export const notificationsPush = inngest.createFunction(
         const keep = agent.pushSubscriptions.filter(
           (s) => typeof s.endpoint === 'string' && !staleSet.has(s.endpoint),
         )
-        await db
-          .update(agents)
-          .set({ pushSubscriptions: keep, updatedAt: new Date() })
-          .where(eq(agents.id, agentId))
+        await withTenant(tenantId, (tx) =>
+          tx
+            .update(agents)
+            .set({ pushSubscriptions: keep, updatedAt: new Date() })
+            .where(eq(agents.id, agentId)),
+        )
         logger.info(
           { tenantId, agentId, pruned: stale.length, remaining: keep.length },
           'notifications-push: pruned stale subscriptions',

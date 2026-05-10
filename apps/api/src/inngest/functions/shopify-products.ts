@@ -36,44 +36,46 @@ async function upsertProductChunk(
   const content = stripHtml(bodyHtml ?? '') || (title ?? '')
   if (!content.trim()) return null
 
-  const existing = await db.query.knowledgeChunks.findFirst({
-    where: sql`${knowledgeChunks.tenantId} = ${tenantId}
-      AND ${knowledgeChunks.sourceType} = 'product'
-      AND ${knowledgeChunks.sourceId} = ${sourceId}`,
-  })
+  return withTenant(tenantId, async (tx) => {
+    const existing = await tx.query.knowledgeChunks.findFirst({
+      where: sql`${knowledgeChunks.tenantId} = ${tenantId}
+        AND ${knowledgeChunks.sourceType} = 'product'
+        AND ${knowledgeChunks.sourceId} = ${sourceId}`,
+    })
 
-  if (existing) {
-    await db
-      .update(knowledgeChunks)
-      .set({
+    if (existing) {
+      await tx
+        .update(knowledgeChunks)
+        .set({
+          title,
+          content,
+          productName: title,
+          category: productType,
+          shopifyUpdatedAt: updatedAt,
+          lastUpdated: new Date(),
+          isActive: true,
+        })
+        .where(eq(knowledgeChunks.id, existing.id))
+      return existing.id
+    }
+
+    const [created] = await tx
+      .insert(knowledgeChunks)
+      .values({
+        tenantId,
+        sourceType: 'product',
+        sourceId,
         title,
         content,
+        productId: sourceId,
         productName: title,
         category: productType,
         shopifyUpdatedAt: updatedAt,
-        lastUpdated: new Date(),
-        isActive: true,
       })
-      .where(eq(knowledgeChunks.id, existing.id))
-    return existing.id
-  }
+      .returning({ id: knowledgeChunks.id })
 
-  const [created] = await db
-    .insert(knowledgeChunks)
-    .values({
-      tenantId,
-      sourceType: 'product',
-      sourceId,
-      title,
-      content,
-      productId: sourceId,
-      productName: title,
-      category: productType,
-      shopifyUpdatedAt: updatedAt,
-    })
-    .returning({ id: knowledgeChunks.id })
-
-  return created?.id ?? null
+    return created?.id ?? null
+  })
 }
 
 async function deactivateProductChunks(
@@ -82,14 +84,16 @@ async function deactivateProductChunks(
 ): Promise<void> {
   const sourceId = String(raw['id'] ?? '')
   if (!sourceId) return
-  await db
-    .update(knowledgeChunks)
-    .set({ isActive: false, lastUpdated: new Date() })
-    .where(
-      sql`${knowledgeChunks.tenantId} = ${tenantId}
-        AND ${knowledgeChunks.sourceType} = 'product'
-        AND ${knowledgeChunks.sourceId} = ${sourceId}`,
-    )
+  await withTenant(tenantId, (tx) =>
+    tx
+      .update(knowledgeChunks)
+      .set({ isActive: false, lastUpdated: new Date() })
+      .where(
+        sql`${knowledgeChunks.tenantId} = ${tenantId}
+          AND ${knowledgeChunks.sourceType} = 'product'
+          AND ${knowledgeChunks.sourceId} = ${sourceId}`,
+      ),
+  )
 }
 
 export const shopifyProductsCreated = inngest.createFunction(

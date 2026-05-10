@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm'
-import { db, customers, conversations, messages } from '@sahay/db'
+import { customers, conversations, messages, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { auditAction } from '../../services/audit'
 
@@ -29,33 +29,37 @@ export const shopifyCustomersRedact = inngest.createFunction(
 
     if (!shopifyCustomerId) return { skipped: true, reason: 'no_customer_id' }
 
-    const customer = await step.run('lookup', async () => {
-      return db.query.customers.findFirst({
-        where: sql`${customers.tenantId} = ${tenantId}
-          AND ${customers.shopifyCustomerId} = ${BigInt(shopifyCustomerId)}`,
-      })
-    })
+    const customer = await step.run('lookup', async () =>
+      withTenant(tenantId, (tx) =>
+        tx.query.customers.findFirst({
+          where: sql`${customers.tenantId} = ${tenantId}
+            AND ${customers.shopifyCustomerId} = ${BigInt(shopifyCustomerId)}`,
+        }),
+      ),
+    )
 
     if (!customer) return { skipped: true, reason: 'customer_not_found' }
 
-    await step.run('delete-cascade', async () => {
-      const convs = await db
-        .select({ id: conversations.id })
-        .from(conversations)
-        .where(eq(conversations.customerId, customer.id))
-      const convIds = convs.map((c) => c.id)
+    await step.run('delete-cascade', async () =>
+      withTenant(tenantId, async (tx) => {
+        const convs = await tx
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(eq(conversations.customerId, customer.id))
+        const convIds = convs.map((c) => c.id)
 
-      if (convIds.length > 0) {
-        await db.delete(messages).where(
-          sql`${messages.conversationId} IN (${sql.join(
-            convIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-        )
-        await db.delete(conversations).where(eq(conversations.customerId, customer.id))
-      }
-      await db.delete(customers).where(eq(customers.id, customer.id))
-    })
+        if (convIds.length > 0) {
+          await tx.delete(messages).where(
+            sql`${messages.conversationId} IN (${sql.join(
+              convIds.map((id) => sql`${id}`),
+              sql`, `,
+            )})`,
+          )
+          await tx.delete(conversations).where(eq(conversations.customerId, customer.id))
+        }
+        await tx.delete(customers).where(eq(customers.id, customer.id))
+      }),
+    )
 
     await step.run('audit', async () => {
       await auditAction({

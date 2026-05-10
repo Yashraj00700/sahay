@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { db, customers } from '@sahay/db'
+import { customers, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 
 /**
@@ -32,18 +32,20 @@ export const proactiveMessage = inngest.createFunction(
       await step.sleepUntil('wait-until-schedule', wakeAt)
     }
 
-    const customer = await step.run('reload-customer', async () => {
-      const row = await db.query.customers.findFirst({
-        where: eq(customers.id, customerId),
-      })
-      if (!row) throw new Error(`proactive-message: customer ${customerId} not found`)
-      return {
-        id: row.id,
-        tenantId: row.tenantId,
-        whatsappId: row.whatsappId,
-        isOptout: row.isOptout ?? false,
-      }
-    })
+    const customer = await step.run('reload-customer', async () =>
+      withTenant(tenantId, async (tx) => {
+        const row = await tx.query.customers.findFirst({
+          where: eq(customers.id, customerId),
+        })
+        if (!row) throw new Error(`proactive-message: customer ${customerId} not found`)
+        return {
+          id: row.id,
+          tenantId: row.tenantId,
+          whatsappId: row.whatsappId,
+          isOptout: row.isOptout ?? false,
+        }
+      }),
+    )
 
     if (customer.tenantId !== tenantId) {
       logger.warn({ customerId, tenantId }, 'proactive-message: tenant mismatch — skip')

@@ -1,10 +1,10 @@
 import { eq, sql } from 'drizzle-orm'
 import {
-  db,
   tenants,
   customers,
   orders,
   knowledgeChunks,
+  withTenant,
 } from '@sahay/db'
 import { inngest } from '../client'
 import { ShopifyClient, SHOPIFY_API_VERSION } from '../../services/shopify/client'
@@ -40,16 +40,18 @@ export const shopifySync = inngest.createFunction(
   async ({ event, step, logger }) => {
     const { tenantId, resource, since } = event.data
 
-    const tenant = await step.run('load-tenant', async () => {
-      const row = await db.query.tenants.findFirst({
-        where: eq(tenants.id, tenantId),
-      })
-      if (!row) throw new Error(`shopify-sync: tenant ${tenantId} not found`)
-      return {
-        shopifyDomain: row.shopifyDomain,
-        accessToken: row.shopifyAccessToken,
-      }
-    })
+    const tenant = await step.run('load-tenant', async () =>
+      withTenant(tenantId, async (tx) => {
+        const row = await tx.query.tenants.findFirst({
+          where: eq(tenants.id, tenantId),
+        })
+        if (!row) throw new Error(`shopify-sync: tenant ${tenantId} not found`)
+        return {
+          shopifyDomain: row.shopifyDomain,
+          accessToken: row.shopifyAccessToken,
+        }
+      }),
+    )
 
     const client = new ShopifyClient(tenant.shopifyDomain, tenant.accessToken)
 
@@ -72,53 +74,56 @@ export const shopifySync = inngest.createFunction(
         }>(path)
         const products = resp.products ?? []
 
-        const upserted: string[] = []
-        for (const p of products) {
-          const sourceId = String(p.id)
-          const content = stripHtml(p.body_html ?? '') || (p.title ?? '')
-          if (!content.trim()) continue
+        const upserted = await withTenant(tenantId, async (tx) => {
+          const ids: string[] = []
+          for (const p of products) {
+            const sourceId = String(p.id)
+            const content = stripHtml(p.body_html ?? '') || (p.title ?? '')
+            if (!content.trim()) continue
 
-          // Look up existing chunk for this product (we keep one chunk
-          // per product for the bulk sync; per-section chunking is a
-          // future improvement that lives in the dedicated re-chunker).
-          const existing = await db.query.knowledgeChunks.findFirst({
-            where: sql`${knowledgeChunks.tenantId} = ${tenantId}
-              AND ${knowledgeChunks.sourceType} = 'product'
-              AND ${knowledgeChunks.sourceId} = ${sourceId}`,
-          })
+            // Look up existing chunk for this product (we keep one chunk
+            // per product for the bulk sync; per-section chunking is a
+            // future improvement that lives in the dedicated re-chunker).
+            const existing = await tx.query.knowledgeChunks.findFirst({
+              where: sql`${knowledgeChunks.tenantId} = ${tenantId}
+                AND ${knowledgeChunks.sourceType} = 'product'
+                AND ${knowledgeChunks.sourceId} = ${sourceId}`,
+            })
 
-          if (existing) {
-            await db
-              .update(knowledgeChunks)
-              .set({
-                title: p.title ?? existing.title,
-                content,
-                productName: p.title ?? existing.productName,
-                category: p.product_type ?? existing.category,
-                shopifyUpdatedAt: p.updated_at ? new Date(p.updated_at) : existing.shopifyUpdatedAt,
-                lastUpdated: new Date(),
-                isActive: true,
-              })
-              .where(eq(knowledgeChunks.id, existing.id))
-            upserted.push(existing.id)
-          } else {
-            const [created] = await db
-              .insert(knowledgeChunks)
-              .values({
-                tenantId,
-                sourceType: 'product',
-                sourceId,
-                title: p.title ?? null,
-                content,
-                productId: sourceId,
-                productName: p.title ?? null,
-                category: p.product_type ?? null,
-                shopifyUpdatedAt: p.updated_at ? new Date(p.updated_at) : null,
-              })
-              .returning({ id: knowledgeChunks.id })
-            if (created) upserted.push(created.id)
+            if (existing) {
+              await tx
+                .update(knowledgeChunks)
+                .set({
+                  title: p.title ?? existing.title,
+                  content,
+                  productName: p.title ?? existing.productName,
+                  category: p.product_type ?? existing.category,
+                  shopifyUpdatedAt: p.updated_at ? new Date(p.updated_at) : existing.shopifyUpdatedAt,
+                  lastUpdated: new Date(),
+                  isActive: true,
+                })
+                .where(eq(knowledgeChunks.id, existing.id))
+              ids.push(existing.id)
+            } else {
+              const [created] = await tx
+                .insert(knowledgeChunks)
+                .values({
+                  tenantId,
+                  sourceType: 'product',
+                  sourceId,
+                  title: p.title ?? null,
+                  content,
+                  productId: sourceId,
+                  productName: p.title ?? null,
+                  category: p.product_type ?? null,
+                  shopifyUpdatedAt: p.updated_at ? new Date(p.updated_at) : null,
+                })
+                .returning({ id: knowledgeChunks.id })
+              if (created) ids.push(created.id)
+            }
           }
-        }
+          return ids
+        })
 
         // Fan out embedding work for each upserted chunk.
         for (const kbChunkId of upserted) {
@@ -195,48 +200,50 @@ async function upsertOrder(tenantId: string, raw: Record<string, unknown>): Prom
   const totalPrice = String(raw['total_price'] ?? '0')
   const currency = String(raw['currency'] ?? 'INR')
 
-  const existing = await db.query.orders.findFirst({
-    where: sql`${orders.tenantId} = ${tenantId} AND ${orders.shopifyOrderId} = ${shopifyOrderId}`,
-  })
-
-  const values = {
-    tenantId,
-    shopifyOrderId,
-    shopifyOrderNumber: raw['name'] ? String(raw['name']) : null,
-    shopifyCustomerId: raw['customer']
-      ? String((raw['customer'] as { id?: unknown }).id ?? '')
-      : null,
-    email: (raw['email'] as string | null) ?? null,
-    phone: (raw['phone'] as string | null) ?? null,
-    financialStatus: (raw['financial_status'] as string | null) ?? null,
-    fulfillmentStatus: (raw['fulfillment_status'] as string | null) ?? null,
-    currency,
-    totalPrice,
-    subtotalPrice: raw['subtotal_price'] ? String(raw['subtotal_price']) : null,
-    totalTax: raw['total_tax'] ? String(raw['total_tax']) : null,
-    totalDiscounts: raw['total_discounts'] ? String(raw['total_discounts']) : null,
-    lineItemCount: Array.isArray(raw['line_items']) ? (raw['line_items'] as unknown[]).length : null,
-    lineItems: raw['line_items'] ?? null,
-    shippingAddress: raw['shipping_address'] ?? null,
-    billingAddress: raw['billing_address'] ?? null,
-    tags: (raw['tags'] as string | null) ?? null,
-    note: (raw['note'] as string | null) ?? null,
-    cancelledAt: raw['cancelled_at'] ? new Date(String(raw['cancelled_at'])) : null,
-    cancelReason: (raw['cancel_reason'] as string | null) ?? null,
-    fulfilledAt: raw['closed_at'] ? new Date(String(raw['closed_at'])) : null,
-    rawPayload: raw,
-    syncedAt: new Date(),
-  }
-
-  if (existing) {
-    await db.update(orders).set(values).where(eq(orders.id, existing.id))
-  } else {
-    await db.insert(orders).values({
-      ...values,
-      createdAt: raw['created_at'] ? new Date(String(raw['created_at'])) : new Date(),
-      updatedAt: raw['updated_at'] ? new Date(String(raw['updated_at'])) : new Date(),
+  await withTenant(tenantId, async (tx) => {
+    const existing = await tx.query.orders.findFirst({
+      where: sql`${orders.tenantId} = ${tenantId} AND ${orders.shopifyOrderId} = ${shopifyOrderId}`,
     })
-  }
+
+    const values = {
+      tenantId,
+      shopifyOrderId,
+      shopifyOrderNumber: raw['name'] ? String(raw['name']) : null,
+      shopifyCustomerId: raw['customer']
+        ? String((raw['customer'] as { id?: unknown }).id ?? '')
+        : null,
+      email: (raw['email'] as string | null) ?? null,
+      phone: (raw['phone'] as string | null) ?? null,
+      financialStatus: (raw['financial_status'] as string | null) ?? null,
+      fulfillmentStatus: (raw['fulfillment_status'] as string | null) ?? null,
+      currency,
+      totalPrice,
+      subtotalPrice: raw['subtotal_price'] ? String(raw['subtotal_price']) : null,
+      totalTax: raw['total_tax'] ? String(raw['total_tax']) : null,
+      totalDiscounts: raw['total_discounts'] ? String(raw['total_discounts']) : null,
+      lineItemCount: Array.isArray(raw['line_items']) ? (raw['line_items'] as unknown[]).length : null,
+      lineItems: raw['line_items'] ?? null,
+      shippingAddress: raw['shipping_address'] ?? null,
+      billingAddress: raw['billing_address'] ?? null,
+      tags: (raw['tags'] as string | null) ?? null,
+      note: (raw['note'] as string | null) ?? null,
+      cancelledAt: raw['cancelled_at'] ? new Date(String(raw['cancelled_at'])) : null,
+      cancelReason: (raw['cancel_reason'] as string | null) ?? null,
+      fulfilledAt: raw['closed_at'] ? new Date(String(raw['closed_at'])) : null,
+      rawPayload: raw,
+      syncedAt: new Date(),
+    }
+
+    if (existing) {
+      await tx.update(orders).set(values).where(eq(orders.id, existing.id))
+    } else {
+      await tx.insert(orders).values({
+        ...values,
+        createdAt: raw['created_at'] ? new Date(String(raw['created_at'])) : new Date(),
+        updatedAt: raw['updated_at'] ? new Date(String(raw['updated_at'])) : new Date(),
+      })
+    }
+  })
 }
 
 async function upsertCustomer(tenantId: string, raw: Record<string, unknown>): Promise<void> {
@@ -245,28 +252,30 @@ async function upsertCustomer(tenantId: string, raw: Record<string, unknown>): P
   const email = (raw['email'] as string | null) ?? null
   const phone = (raw['phone'] as string | null) ?? null
 
-  const existing = await db.query.customers.findFirst({
-    where: sql`${customers.tenantId} = ${tenantId}
-      AND ${customers.shopifyCustomerId} = ${shopifyCustomerId}`,
+  await withTenant(tenantId, async (tx) => {
+    const existing = await tx.query.customers.findFirst({
+      where: sql`${customers.tenantId} = ${tenantId}
+        AND ${customers.shopifyCustomerId} = ${shopifyCustomerId}`,
+    })
+
+    const firstName = (raw['first_name'] as string | null) ?? ''
+    const lastName = (raw['last_name'] as string | null) ?? ''
+    const name = `${firstName} ${lastName}`.trim() || null
+
+    const values = {
+      tenantId,
+      shopifyCustomerId,
+      email,
+      phone,
+      name,
+      totalOrders: Number(raw['orders_count'] ?? 0),
+      totalSpent: String(raw['total_spent'] ?? '0'),
+    }
+
+    if (existing) {
+      await tx.update(customers).set(values).where(eq(customers.id, existing.id))
+    } else {
+      await tx.insert(customers).values(values)
+    }
   })
-
-  const firstName = (raw['first_name'] as string | null) ?? ''
-  const lastName = (raw['last_name'] as string | null) ?? ''
-  const name = `${firstName} ${lastName}`.trim() || null
-
-  const values = {
-    tenantId,
-    shopifyCustomerId,
-    email,
-    phone,
-    name,
-    totalOrders: Number(raw['orders_count'] ?? 0),
-    totalSpent: String(raw['total_spent'] ?? '0'),
-  }
-
-  if (existing) {
-    await db.update(customers).set(values).where(eq(customers.id, existing.id))
-  } else {
-    await db.insert(customers).values(values)
-  }
 }

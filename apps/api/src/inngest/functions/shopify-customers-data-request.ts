@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm'
-import { db, tenants, customers, conversations, messages } from '@sahay/db'
+import { tenants, customers, conversations, messages, withTenant } from '@sahay/db'
 import { inngest } from '../client'
 import { sendEmail } from '../../services/email'
 import { auditAction } from '../../services/audit'
@@ -28,33 +28,37 @@ export const shopifyCustomersDataRequest = inngest.createFunction(
       return { skipped: true, reason: 'no_customer_id' }
     }
 
-    const dump = await step.run('collect', async () => {
-      const customer = await db.query.customers.findFirst({
-        where: sql`${customers.tenantId} = ${tenantId}
-          AND ${customers.shopifyCustomerId} = ${BigInt(shopifyCustomerId)}`,
-      })
-      if (!customer) return null
+    const dump = await step.run('collect', async () =>
+      withTenant(tenantId, async (tx) => {
+        const customer = await tx.query.customers.findFirst({
+          where: sql`${customers.tenantId} = ${tenantId}
+            AND ${customers.shopifyCustomerId} = ${BigInt(shopifyCustomerId)}`,
+        })
+        if (!customer) return null
 
-      const convs = await db.query.conversations.findMany({
-        where: eq(conversations.customerId, customer.id),
-      })
-      const msgIds = convs.map((c) => c.id)
-      const allMessages = msgIds.length
-        ? await db
-            .select()
-            .from(messages)
-            .where(sql`${messages.conversationId} IN (${sql.join(msgIds.map((id) => sql`${id}`), sql`, `)})`)
-        : []
+        const convs = await tx.query.conversations.findMany({
+          where: eq(conversations.customerId, customer.id),
+        })
+        const msgIds = convs.map((c) => c.id)
+        const allMessages = msgIds.length
+          ? await tx
+              .select()
+              .from(messages)
+              .where(sql`${messages.conversationId} IN (${sql.join(msgIds.map((id) => sql`${id}`), sql`, `)})`)
+          : []
 
-      return { customer, conversations: convs, messages: allMessages }
-    })
+        return { customer, conversations: convs, messages: allMessages }
+      }),
+    )
 
     if (!dump) return { skipped: true, reason: 'customer_not_found' }
 
-    const merchantEmail = await step.run('lookup-merchant-email', async () => {
-      const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId) })
-      return tenant?.shopEmail ?? null
-    })
+    const merchantEmail = await step.run('lookup-merchant-email', async () =>
+      withTenant(tenantId, async (tx) => {
+        const tenant = await tx.query.tenants.findFirst({ where: eq(tenants.id, tenantId) })
+        return tenant?.shopEmail ?? null
+      }),
+    )
 
     if (!merchantEmail) {
       return { skipped: true, reason: 'no_merchant_email' }

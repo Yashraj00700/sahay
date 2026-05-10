@@ -77,26 +77,73 @@ needed.
 
 ## Migration TODOs
 
-Routes/functions still using the un-scoped `db` import (RLS does not
-activate without `set_config`, so these continue to function but skip the
-defense-in-depth check). Migrate progressively:
+### Migrated to `ctx.withTenant` / `withTenant` / `withSystemBypass`
 
-- [ ] `apps/api/src/routes/conversations/*` — switch to `ctx.withTenant`
-- [ ] `apps/api/src/routes/messages/*` — switch to `ctx.withTenant`
-- [ ] `apps/api/src/routes/customers/*` — switch to `ctx.withTenant`
-- [ ] `apps/api/src/routes/orders/*` — switch to `ctx.withTenant`
-- [ ] `apps/api/src/routes/analytics/*` — switch to `ctx.withTenant`
-- [ ] `apps/api/src/routes/kb/*` — switch to `ctx.withTenant`
-- [ ] `apps/api/src/routes/canned-responses/*` — switch to `ctx.withTenant`
-- [ ] `apps/api/src/routes/wa-templates/*` — switch to `ctx.withTenant`
-- [ ] `apps/api/src/routes/agents/*` — switch to `ctx.withTenant`
-- [ ] Inngest functions — wrap per-tenant steps in `withTenant`, wrap
-      cross-tenant aggregations in `withSystemBypass`
-- [ ] Shopify webhooks (`app/uninstalled`, `shop/redact`, `customers/redact`)
-      — `withSystemBypass`
+Vercel Function routes (authed):
+
+- [x] `api/auth/logout.ts`
+- [x] `api/agents/index.ts`
+- [x] `api/agents/[id]/index.ts`
+- [x] `api/agents/invite.ts`
+- [x] `api/conversations/index.ts`
+- [x] `api/conversations/[id].ts`
+- [x] `api/conversations/[id]/messages.ts`
+- [x] `api/conversations/[id]/assign.ts`
+- [x] `api/conversations/[id]/notes.ts`
+- [x] `api/conversations/[id]/resolve.ts`
+- [x] `api/conversations/[id]/reopen.ts`
+- [x] `api/messages/upload.ts`
+- [x] `api/notifications/subscribe.ts`
+- [x] `api/notifications/unsubscribe.ts`
+- [x] `api/settings/channels.ts`
+- [x] `api/settings/ai.ts`
+
+Inngest functions — per-tenant (wrapped in `withTenant(event.data.tenantId, ...)`):
+
+- [x] `whatsapp-incoming` / `whatsapp-outgoing`
+- [x] `instagram-incoming` / `instagram-outgoing`
+- [x] `webchat-incoming`
+- [x] `ai-respond` / `ai-embed`
+- [x] `proactive-message`
+- [x] `notifications-push`
+- [x] `shopify-orders-created` / `shopify-orders-updated` / `shopify-orders-fulfilled`
+- [x] `shopify-products-created` / `shopify-products-updated` / `shopify-products-deleted`
+- [x] `shopify-customers-created` / `shopify-customers-updated`
+- [x] `shopify-customers-redact` (per-tenant, hard-delete one customer)
+- [x] `shopify-customers-data-request`
+- [x] `shopify-app-uninstalled`
+- [x] `shopify-sync` (products / orders / customers backfill)
+
+Inngest functions — cross-tenant (wrapped in `withSystemBypass`):
+
+- [x] `cron/analytics-rollup` — `list-active-tenants` step
+- [x] `cron/kb-refresh` — `list-tenants` step
+- [x] `cron/wa-session-expiry` — global scan + batched UPDATE
+- [x] `shopify-shop-redact` — wipes every table for the tenant including
+      the `tenants` row itself
+
+### Still bypassing RLS (intentional / out of scope here)
+
+- [ ] `api/auth/login.ts`, `refresh.ts`, `forgot-password.ts`,
+      `reset-password.ts`, `accept-invite.ts` — pre-auth, no
+      `ctx.withTenant` available; use `db` directly with explicit
+      `WHERE tenant_id = …` filters.
+- [ ] `api/shopify/install.ts`, `api/shopify/callback.ts` — pre-tenant /
+      tenant-creating; cross-tenant lookups via `withSystemBypass` where
+      applicable.
+- [ ] `api/webhooks/*` — no auth: they look up tenant by phoneNumberId /
+      pageId / shopDomain (cross-tenant lookup) then forward to Inngest.
+      The Inngest function is the per-tenant boundary.
+- [ ] Onboarding probes / shop-info reads in `services/shopify/*` —
+      pre-tenant or cross-shop tooling.
+- [ ] `defineAuthedHandler` itself still hits `db.query.agents` /
+      `db.query.tenants` to authenticate the bearer token. RLS would
+      require a chicken-and-egg `set_config` before we know the tenant id,
+      so this stays unscoped (and is bounded to two specific lookups).
 
 Once every route is migrated, deploy with a non-BYPASSRLS DB role and remove
-the plain `db` export.
+the plain `db` export everywhere except the small set of legitimate
+`withSystemBypass` callers.
 
 ## Testing RLS locally
 
