@@ -7,10 +7,9 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { SentimentLevel, EmotionTag } from '@sahay/shared'
+import { env } from '../../lib/env'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -111,7 +111,7 @@ export default async function handler(
 async function handleVerification(
   req: VercelRequest,
   res: VercelResponse,
-  log: ReturnType<typeof logger.child>,
+  log: import('pino').Logger,
 ): Promise<void> {
   const q = req.query as Record<string, string | string[] | undefined>
   const mode = pickQuery(q['hub.mode'])

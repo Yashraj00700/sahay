@@ -7,11 +7,10 @@
 
 import OpenAI from 'openai'
 import { createHash } from 'crypto'
-import { redis } from '../../lib/redis'
+import { upstash } from '../../lib/upstash'
+import { env } from '../../lib/env'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY })
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -42,9 +41,9 @@ function cacheKey(text: string): string {
 
 async function getCached(text: string): Promise<number[] | null> {
   try {
-    const raw = await redis.get(cacheKey(text))
+    const raw = await upstash.get<number[] | string>(cacheKey(text))
     if (!raw) return null
-    return JSON.parse(raw) as number[]
+    return typeof raw === 'string' ? (JSON.parse(raw) as number[]) : raw
   } catch {
     return null
   }
@@ -52,10 +51,9 @@ async function getCached(text: string): Promise<number[] | null> {
 
 async function setCache(text: string, embedding: number[]): Promise<void> {
   try {
-    await redis.setex(cacheKey(text), CACHE_TTL_SECONDS, JSON.stringify(embedding))
+    await upstash.set(cacheKey(text), embedding, { ex: CACHE_TTL_SECONDS })
   } catch (err) {
-    // Cache write failure should never crash the pipeline
-    console.warn('[embeddings] Redis cache write failed:', err)
+    console.warn('[embeddings] Upstash cache write failed:', err)
   }
 }
 

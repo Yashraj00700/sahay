@@ -1,4 +1,4 @@
-import { serve } from 'inngest/lambda'
+import { serve } from 'inngest/express'
 import { inngest } from '../apps/api/src/inngest/client'
 import { allFunctions } from '../apps/api/src/inngest/functions'
 import { env } from '../apps/api/src/lib/env'

@@ -31,8 +31,9 @@ import { retrieveContext, type RAGChunk } from './rag'
 import { decideRouting, type EscalationSignals } from './router'
 import type { IntentCategory, SentimentLevel } from '@sahay/shared'
 import { triggerToTenant, triggerToConversation } from '../../lib/pusher'
+import { env } from '../../lib/env'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

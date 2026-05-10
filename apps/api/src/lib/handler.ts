@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { randomUUID } from 'node:crypto'
-import { ZodError, type ZodSchema } from 'zod'
+import { ZodError, z } from 'zod'
 import { db, agents, tenants } from '@sahay/db'
 import { and, eq } from 'drizzle-orm'
 import { env } from './env'
@@ -175,7 +175,7 @@ export function requireRole(ctx: AuthedContext, allowed: ReadonlyArray<string>):
   }
 }
 
-export function parseBody<T>(schema: ZodSchema<T>, body: unknown): T {
+export function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown): z.output<S> {
   const result = schema.safeParse(body)
   if (!result.success) {
     throw new ValidationError('Invalid request body', result.error.flatten())
@@ -183,7 +183,7 @@ export function parseBody<T>(schema: ZodSchema<T>, body: unknown): T {
   return result.data
 }
 
-export function parseQuery<T>(schema: ZodSchema<T>, query: unknown): T {
+export function parseQuery<S extends z.ZodTypeAny>(schema: S, query: unknown): z.output<S> {
   const result = schema.safeParse(query)
   if (!result.success) {
     throw new ValidationError('Invalid query parameters', result.error.flatten())
@@ -211,11 +211,19 @@ function sendError(
   })
 }
 
+type AnyLogger = {
+  warn: (...args: unknown[]) => void
+  error: (...args: unknown[]) => void
+  info: (...args: unknown[]) => void
+  debug: (...args: unknown[]) => void
+  child: (bindings: Record<string, unknown>) => AnyLogger
+}
+
 function handleError(
   err: unknown,
   res: VercelResponse,
   requestId: string,
-  log: ReturnType<typeof logger.child>,
+  log: AnyLogger,
 ) {
   if (err instanceof AppError) {
     log.warn({ err, code: err.code, status: err.statusCode }, err.message)

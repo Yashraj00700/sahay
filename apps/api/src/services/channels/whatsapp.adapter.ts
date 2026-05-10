@@ -10,6 +10,7 @@ import axios from 'axios'
 import { db } from '@sahay/db'
 import { messages } from '@sahay/db'
 import { eq } from 'drizzle-orm'
+import { env } from '../../lib/env'
 
 const WA_API_BASE = 'https://graph.facebook.com/v18.0'
 
@@ -195,7 +196,7 @@ export function createWhatsAppAdapter(tenant: {
   shopifyAccessToken: string
 }): WhatsAppAdapter | null {
   if (!tenant.whatsappPhoneNumberId) return null
-  const token = tenant.whatsappAccessToken ?? process.env.WA_SYSTEM_ACCESS_TOKEN
+  const token = tenant.whatsappAccessToken ?? env.WA_ACCESS_TOKEN
   if (!token) return null
   return new WhatsAppAdapter(tenant.whatsappPhoneNumberId, token)
 }
@@ -223,7 +224,7 @@ export async function processOutgoingWhatsApp(job: {
   messageId: string    // DB messages.id
 }): Promise<void> {
   const { phoneNumberId, to, message, messageId } = job
-  const accessToken = process.env.WA_SYSTEM_ACCESS_TOKEN ?? ''
+  const accessToken = env.WA_ACCESS_TOKEN ?? ''
   const adapter = new WhatsAppAdapter(phoneNumberId, accessToken)
 
   try {

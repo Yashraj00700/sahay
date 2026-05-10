@@ -20,11 +20,6 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
-      '/socket.io': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        ws: true,
-      },
     },
   },
   build: {
@@ -35,7 +30,7 @@ export default defineConfig({
           'vendor-query': ['@tanstack/react-query'],
           'vendor-ui': ['framer-motion', 'lucide-react', 'react-hot-toast'],
           'vendor-charts': ['recharts'],
-          'vendor-socket': ['socket.io-client'],
+          'vendor-realtime': ['pusher-js'],
         },
       },
     },
