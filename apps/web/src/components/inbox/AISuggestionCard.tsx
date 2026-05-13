@@ -1,37 +1,60 @@
-import { useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { ThumbsUp, ThumbsDown, Check, Edit3, X, Sparkles, BookOpen } from 'lucide-react'
-import clsx from 'clsx'
-import type { MessageCitation } from '@sahay/shared'
+import { useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ThumbsUp,
+  ThumbsDown,
+  Check,
+  Edit3,
+  X,
+  Sparkles,
+  BookOpen,
+} from "lucide-react";
+import clsx from "clsx";
+import type { MessageCitation } from "@sahay/shared";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AISuggestionCardProps {
-  suggestion: string
-  confidence: number
-  citations: MessageCitation[]
-  intent: string
-  onAccept: () => void
-  onEdit: () => void
-  onDismiss: () => void
-  onFeedback: (positive: boolean) => void
+  suggestion: string;
+  confidence: number;
+  citations: MessageCitation[];
+  intent: string;
+  onAccept: () => void;
+  onEdit: () => void;
+  onDismiss: () => void;
+  onFeedback: (positive: boolean) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function ConfidenceBadge({ confidence }: { confidence: number }) {
-  const pct = Math.round(confidence * 100)
-  const { label, cls } = confidence > 0.85
-    ? { label: 'High confidence', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
-    : confidence > 0.65
-    ? { label: 'Medium confidence', cls: 'bg-amber-100 text-amber-700 border-amber-200' }
-    : { label: 'Low confidence', cls: 'bg-red-100 text-red-700 border-red-200' }
+  const pct = Math.round(confidence * 100);
+  const { label, cls } =
+    confidence > 0.85
+      ? {
+          label: "High confidence",
+          cls: "bg-emerald-100 text-emerald-700 border-emerald-200",
+        }
+      : confidence > 0.65
+        ? {
+            label: "Medium confidence",
+            cls: "bg-amber-100 text-amber-700 border-amber-200",
+          }
+        : {
+            label: "Low confidence",
+            cls: "bg-red-100 text-red-700 border-red-200",
+          };
 
   return (
-    <span className={clsx('text-[10px] font-medium px-2 py-0.5 rounded-full border', cls)}>
+    <span
+      className={clsx(
+        "text-[10px] font-medium px-2 py-0.5 rounded-full border",
+        cls,
+      )}
+    >
       {pct}% · {label}
     </span>
-  )
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -46,23 +69,25 @@ export function AISuggestionCard({
   onDismiss,
   onFeedback,
 }: AISuggestionCardProps) {
-
   // Esc key closes
-  const handleKey = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onDismiss()
-  }, [onDismiss])
+  const handleKey = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") onDismiss();
+    },
+    [onDismiss],
+  );
 
   useEffect(() => {
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [handleKey])
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [handleKey]);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 12 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
       className="mx-3 mb-2 bg-white border border-violet-200 rounded-2xl shadow-lg shadow-violet-100/50 overflow-hidden"
     >
       {/* Top accent bar */}
@@ -75,7 +100,9 @@ export function AISuggestionCard({
             <div className="w-5 h-5 rounded-full bg-violet-100 flex items-center justify-center">
               <Sparkles className="w-3 h-3 text-violet-600" />
             </div>
-            <span className="text-[12px] font-semibold text-violet-700">✦ Sahay suggests</span>
+            <span className="text-[12px] font-semibold text-violet-700">
+              ✦ Sahay suggests
+            </span>
             <ConfidenceBadge confidence={confidence} />
           </div>
 
@@ -110,7 +137,7 @@ export function AISuggestionCard({
         {/* Intent tag */}
         {intent && (
           <span className="inline-block text-[10px] text-violet-500 bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-full mb-2">
-            {intent.replace(/_/g, ' ')}
+            {intent.replace(/_/g, " ")}
           </span>
         )}
 
@@ -160,9 +187,11 @@ export function AISuggestionCard({
             Dismiss
           </button>
 
-          <span className="ml-auto text-[10px] text-gray-300">Esc to close</span>
+          <span className="ml-auto text-[10px] text-gray-300">
+            Esc to close
+          </span>
         </div>
       </div>
     </motion.div>
-  )
+  );
 }

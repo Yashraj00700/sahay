@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.next
+.turbo
+.vercel
+coverage
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+apps/web/public
+packages/db/drizzle/meta
