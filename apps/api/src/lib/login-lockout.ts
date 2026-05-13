@@ -18,27 +18,27 @@
 // would also leak that the email exists. The thrown AppError uses a generic
 // message; the caller decides what HTTP body to send.
 
-import { upstash } from './upstash'
-import { AppError } from './errors'
+import { upstash } from "./upstash";
+import { AppError } from "./errors";
 
 /** How long a counter persists after its first failure (seconds). */
-const WINDOW_SEC = 15 * 60
+const WINDOW_SEC = 15 * 60;
 
 /** Per-account threshold: 5 failures within the window triggers lockout. */
-export const EMAIL_THRESHOLD = 5
+export const EMAIL_THRESHOLD = 5;
 
 /** Per-IP threshold: 20 failures within the window triggers lockout. */
-export const IP_THRESHOLD = 20
+export const IP_THRESHOLD = 20;
 
 interface LockoutKey {
-  email: string
-  ip: string
+  email: string;
+  ip: string;
 }
 
 const emailKey = (email: string): string =>
-  `lockout:email:${email.trim().toLowerCase()}`
+  `lockout:email:${email.trim().toLowerCase()}`;
 
-const ipKey = (ip: string): string => `lockout:ip:${ip || 'unknown'}`
+const ipKey = (ip: string): string => `lockout:ip:${ip || "unknown"}`;
 
 /**
  * Throws `AppError('FORBIDDEN', ..., 429)` if either counter is at or above
@@ -52,18 +52,18 @@ export async function checkLockout({ email, ip }: LockoutKey): Promise<void> {
   const [emailCount, ipCount] = await Promise.all([
     upstash.get<number>(emailKey(email)),
     upstash.get<number>(ipKey(ip)),
-  ])
+  ]);
 
-  const eHits = Number(emailCount ?? 0)
-  const iHits = Number(ipCount ?? 0)
+  const eHits = Number(emailCount ?? 0);
+  const iHits = Number(ipCount ?? 0);
 
   if (eHits >= EMAIL_THRESHOLD || iHits >= IP_THRESHOLD) {
-    const minutes = Math.ceil(WINDOW_SEC / 60)
+    const minutes = Math.ceil(WINDOW_SEC / 60);
     throw new AppError(
-      'FORBIDDEN',
+      "FORBIDDEN",
       `Account temporarily locked. Try again in ${minutes} minutes.`,
       429,
-    )
+    );
   }
 }
 
@@ -78,21 +78,21 @@ export async function recordFailedAttempt({
   email,
   ip,
 }: LockoutKey): Promise<void> {
-  const expireAt = Math.floor(Date.now() / 1000) + WINDOW_SEC
-  const eKey = emailKey(email)
-  const iKey = ipKey(ip)
+  const expireAt = Math.floor(Date.now() / 1000) + WINDOW_SEC;
+  const eKey = emailKey(email);
+  const iKey = ipKey(ip);
 
   const [eCount, iCount] = await Promise.all([
     upstash.incr(eKey),
     upstash.incr(iKey),
-  ])
+  ]);
 
   // Only set the expiry when we just created the key (count === 1). For
   // subsequent increments the existing TTL stays in place.
-  const expiries: Promise<unknown>[] = []
-  if (eCount === 1) expiries.push(upstash.expireat(eKey, expireAt))
-  if (iCount === 1) expiries.push(upstash.expireat(iKey, expireAt))
-  if (expiries.length) await Promise.all(expiries)
+  const expiries: Promise<unknown>[] = [];
+  if (eCount === 1) expiries.push(upstash.expireat(eKey, expireAt));
+  if (iCount === 1) expiries.push(upstash.expireat(iKey, expireAt));
+  if (expiries.length) await Promise.all(expiries);
 }
 
 /**
@@ -101,5 +101,5 @@ export async function recordFailedAttempt({
  * against their next login attempt.
  */
 export async function clearLockout({ email, ip }: LockoutKey): Promise<void> {
-  await Promise.all([upstash.del(emailKey(email)), upstash.del(ipKey(ip))])
+  await Promise.all([upstash.del(emailKey(email)), upstash.del(ipKey(ip))]);
 }

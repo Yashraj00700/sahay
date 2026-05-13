@@ -1,6 +1,6 @@
-import { and, eq, isNotNull, ne } from 'drizzle-orm'
-import { db, tenants, withSystemBypass } from '@sahay/db'
-import { inngest } from '../../client'
+import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { db, tenants, withSystemBypass } from "@sahay/db";
+import { inngest } from "../../client";
 
 /**
  * cron/kb-refresh
@@ -12,10 +12,10 @@ import { inngest } from '../../client'
  * pile multiple syncs on the same shop.
  */
 export const kbRefresh = inngest.createFunction(
-  { id: 'cron-kb-refresh', retries: 1 },
-  { cron: '0 3 * * *' },
+  { id: "cron-kb-refresh", retries: 1 },
+  { cron: "0 3 * * *" },
   async ({ step, logger }) => {
-    const tenantList = await step.run('list-tenants', async () =>
+    const tenantList = await step.run("list-tenants", async () =>
       withSystemBypass(() =>
         db
           .select({ id: tenants.id, shopifyDomain: tenants.shopifyDomain })
@@ -24,22 +24,22 @@ export const kbRefresh = inngest.createFunction(
             and(
               eq(tenants.isActive, true),
               isNotNull(tenants.shopifyAccessToken),
-              ne(tenants.shopifyAccessToken, ''),
+              ne(tenants.shopifyAccessToken, ""),
             ),
           ),
       ),
-    )
+    );
 
-    let scheduled = 0
+    let scheduled = 0;
     for (const t of tenantList) {
       await inngest.send({
-        name: 'shopify/sync.requested',
-        data: { tenantId: t.id, resource: 'products' },
-      })
-      scheduled += 1
+        name: "shopify/sync.requested",
+        data: { tenantId: t.id, resource: "products" },
+      });
+      scheduled += 1;
     }
 
-    logger.info({ scheduled }, 'kb-refresh: queued daily product syncs')
-    return { scheduled }
+    logger.info({ scheduled }, "kb-refresh: queued daily product syncs");
+    return { scheduled };
   },
-)
+);

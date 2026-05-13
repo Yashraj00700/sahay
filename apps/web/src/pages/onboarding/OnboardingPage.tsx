@@ -13,10 +13,10 @@
 //   5 AI persona — name / tone / language → /api/settings/ai (PATCH)
 //   6 Done — link to /inbox
 
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
 import {
   Check,
   ChevronRight,
@@ -29,62 +29,62 @@ import {
   UserPlus,
   PartyPopper,
   Loader2,
-} from 'lucide-react'
-import { api } from '../../lib/api'
-import { useAuthStore } from '../../store/auth.store'
-import { cn } from '../../lib/utils'
+} from "lucide-react";
+import { api } from "../../lib/api";
+import { useAuthStore } from "../../store/auth.store";
+import { cn } from "../../lib/utils";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface WhatsAppCreds {
-  phoneNumberId: string
-  accessToken: string
-  verifyToken: string
-  appSecret: string
+  phoneNumberId: string;
+  accessToken: string;
+  verifyToken: string;
+  appSecret: string;
 }
 
 interface InstagramCreds {
-  pageId: string
-  accessToken: string
-  verifyToken: string
+  pageId: string;
+  accessToken: string;
+  verifyToken: string;
 }
 
 interface PersonaForm {
-  aiPersonaName: string
-  aiTone: 'formal' | 'warm' | 'casual'
-  aiLanguage: 'en' | 'hi' | 'hinglish' | 'auto'
+  aiPersonaName: string;
+  aiTone: "formal" | "warm" | "casual";
+  aiLanguage: "en" | "hi" | "hinglish" | "auto";
 }
 
 interface InviteForm {
-  name: string
-  email: string
-  role: 'admin' | 'agent'
+  name: string;
+  email: string;
+  role: "admin" | "agent";
 }
 
 type StepId =
-  | 'welcome'
-  | 'shopify'
-  | 'agent'
-  | 'whatsapp'
-  | 'instagram'
-  | 'persona'
-  | 'done'
+  | "welcome"
+  | "shopify"
+  | "agent"
+  | "whatsapp"
+  | "instagram"
+  | "persona"
+  | "done";
 
 interface StepDef {
-  id: StepId
-  label: string
-  icon: typeof Bot
+  id: StepId;
+  label: string;
+  icon: typeof Bot;
 }
 
 const STEPS: StepDef[] = [
-  { id: 'welcome', label: 'Welcome', icon: Sparkles },
-  { id: 'shopify', label: 'Shopify', icon: Store },
-  { id: 'agent', label: 'Team', icon: UserPlus },
-  { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
-  { id: 'instagram', label: 'Instagram', icon: Instagram },
-  { id: 'persona', label: 'AI Persona', icon: Bot },
-  { id: 'done', label: 'Done', icon: PartyPopper },
-]
+  { id: "welcome", label: "Welcome", icon: Sparkles },
+  { id: "shopify", label: "Shopify", icon: Store },
+  { id: "agent", label: "Team", icon: UserPlus },
+  { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+  { id: "instagram", label: "Instagram", icon: Instagram },
+  { id: "persona", label: "AI Persona", icon: Bot },
+  { id: "done", label: "Done", icon: PartyPopper },
+];
 
 // ─── Reusable inputs ────────────────────────────────────────────────────────
 
@@ -93,9 +93,9 @@ function Field({
   hint,
   children,
 }: {
-  label: string
-  hint?: string
-  children: React.ReactNode
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
@@ -105,7 +105,7 @@ function Field({
       {children}
       {hint && <p className="text-xs text-text-secondary">{hint}</p>}
     </div>
-  )
+  );
 }
 
 function Input({
@@ -115,15 +115,15 @@ function Input({
   return (
     <input
       className={cn(
-        'w-full px-3 py-2.5 text-sm rounded-lg border border-border bg-surface',
-        'text-text-primary placeholder:text-text-secondary',
-        'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
-        'disabled:opacity-50',
+        "w-full px-3 py-2.5 text-sm rounded-lg border border-border bg-surface",
+        "text-text-primary placeholder:text-text-secondary",
+        "focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary",
+        "disabled:opacity-50",
         className,
       )}
       {...props}
     />
-  )
+  );
 }
 
 function StyledSelect({
@@ -134,15 +134,15 @@ function StyledSelect({
   return (
     <select
       className={cn(
-        'w-full px-3 py-2.5 text-sm rounded-lg border border-border bg-surface text-text-primary',
-        'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
+        "w-full px-3 py-2.5 text-sm rounded-lg border border-border bg-surface text-text-primary",
+        "focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary",
         className,
       )}
       {...props}
     >
       {children}
     </select>
-  )
+  );
 }
 
 // ─── Step bodies ────────────────────────────────────────────────────────────
@@ -162,10 +162,10 @@ function StepWelcome() {
 
       <ul className="space-y-2 pt-2">
         {[
-          'Connect Shopify so the AI can read orders and products',
-          'Connect WhatsApp + Instagram for inbound messages',
-          'Set the AI persona (name, tone, language)',
-          'Invite teammates to handle escalations',
+          "Connect Shopify so the AI can read orders and products",
+          "Connect WhatsApp + Instagram for inbound messages",
+          "Set the AI persona (name, tone, language)",
+          "Invite teammates to handle escalations",
         ].map((line) => (
           <li
             key={line}
@@ -177,17 +177,17 @@ function StepWelcome() {
         ))}
       </ul>
     </div>
-  )
+  );
 }
 
 function StepShopify({
   shopifyDomain,
   onShopify,
 }: {
-  shopifyDomain: string | null
-  onShopify: (shop: string) => void
+  shopifyDomain: string | null;
+  onShopify: (shop: string) => void;
 }) {
-  const [shop, setShop] = useState('')
+  const [shop, setShop] = useState("");
 
   if (shopifyDomain) {
     return (
@@ -196,13 +196,18 @@ function StepShopify({
           Shopify connected
         </h2>
         <p className="text-sm text-text-secondary">
-          Linked to <code className="px-1.5 py-0.5 rounded bg-border/30 text-text-primary text-xs">{shopifyDomain}</code>.
+          Linked to{" "}
+          <code className="px-1.5 py-0.5 rounded bg-border/30 text-text-primary text-xs">
+            {shopifyDomain}
+          </code>
+          .
         </p>
         <div className="p-3 rounded-lg bg-success/10 border border-success/20 flex items-center gap-2 text-sm text-success">
-          <Check className="w-4 h-4" /> All set — products and orders will sync automatically.
+          <Check className="w-4 h-4" /> All set — products and orders will sync
+          automatically.
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -242,7 +247,7 @@ function StepShopify({
         Install Sahay on Shopify
       </button>
     </div>
-  )
+  );
 }
 
 function StepInviteAgent({
@@ -251,17 +256,19 @@ function StepInviteAgent({
   onSubmit,
   pending,
 }: {
-  data: InviteForm
-  onChange: (d: Partial<InviteForm>) => void
-  onSubmit: () => void
-  pending: boolean
+  data: InviteForm;
+  onChange: (d: Partial<InviteForm>) => void;
+  onSubmit: () => void;
+  pending: boolean;
 }) {
-  const valid = data.email.includes('@') && data.name.trim().length > 0
+  const valid = data.email.includes("@") && data.name.trim().length > 0;
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold text-text-primary">Invite a teammate</h2>
+        <h2 className="text-xl font-bold text-text-primary">
+          Invite a teammate
+        </h2>
         <p className="text-sm text-text-secondary mt-1">
           You're already in. Want a colleague to help handle escalations? Invite
           them now or skip and add later.
@@ -288,7 +295,9 @@ function StepInviteAgent({
       <Field label="Role">
         <StyledSelect
           value={data.role}
-          onChange={(e) => onChange({ role: e.target.value as 'admin' | 'agent' })}
+          onChange={(e) =>
+            onChange({ role: e.target.value as "admin" | "agent" })
+          }
         >
           <option value="agent">Agent — handles conversations</option>
           <option value="admin">Admin — full access including settings</option>
@@ -305,7 +314,7 @@ function StepInviteAgent({
         Send invite
       </button>
     </div>
-  )
+  );
 }
 
 function StepWhatsApp({
@@ -314,18 +323,20 @@ function StepWhatsApp({
   onSubmit,
   pending,
 }: {
-  data: WhatsAppCreds
-  onChange: (d: Partial<WhatsAppCreds>) => void
-  onSubmit: () => void
-  pending: boolean
+  data: WhatsAppCreds;
+  onChange: (d: Partial<WhatsAppCreds>) => void;
+  onSubmit: () => void;
+  pending: boolean;
 }) {
   const valid =
-    data.phoneNumberId.trim().length > 0 && data.accessToken.trim().length > 0
+    data.phoneNumberId.trim().length > 0 && data.accessToken.trim().length > 0;
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold text-text-primary">Connect WhatsApp</h2>
+        <h2 className="text-xl font-bold text-text-primary">
+          Connect WhatsApp
+        </h2>
         <p className="text-sm text-text-secondary mt-1">
           Paste your WhatsApp Cloud API credentials from Meta Business Manager.
         </p>
@@ -362,10 +373,7 @@ function StepWhatsApp({
         />
       </Field>
 
-      <Field
-        label="App Secret"
-        hint="Used to verify webhook signatures."
-      >
+      <Field label="App Secret" hint="Used to verify webhook signatures.">
         <Input
           type="password"
           value={data.appSecret}
@@ -384,7 +392,7 @@ function StepWhatsApp({
         Save WhatsApp credentials
       </button>
     </div>
-  )
+  );
 }
 
 function StepInstagram({
@@ -393,18 +401,20 @@ function StepInstagram({
   onSubmit,
   pending,
 }: {
-  data: InstagramCreds
-  onChange: (d: Partial<InstagramCreds>) => void
-  onSubmit: () => void
-  pending: boolean
+  data: InstagramCreds;
+  onChange: (d: Partial<InstagramCreds>) => void;
+  onSubmit: () => void;
+  pending: boolean;
 }) {
   const valid =
-    data.pageId.trim().length > 0 && data.accessToken.trim().length > 0
+    data.pageId.trim().length > 0 && data.accessToken.trim().length > 0;
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold text-text-primary">Connect Instagram</h2>
+        <h2 className="text-xl font-bold text-text-primary">
+          Connect Instagram
+        </h2>
         <p className="text-sm text-text-secondary mt-1">
           Paste your Instagram credentials from Meta Business Manager.
         </p>
@@ -445,7 +455,7 @@ function StepInstagram({
         Save Instagram credentials
       </button>
     </div>
-  )
+  );
 }
 
 function StepPersona({
@@ -454,15 +464,17 @@ function StepPersona({
   onSubmit,
   pending,
 }: {
-  data: PersonaForm
-  onChange: (d: Partial<PersonaForm>) => void
-  onSubmit: () => void
-  pending: boolean
+  data: PersonaForm;
+  onChange: (d: Partial<PersonaForm>) => void;
+  onSubmit: () => void;
+  pending: boolean;
 }) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold text-text-primary">Set your AI persona</h2>
+        <h2 className="text-xl font-bold text-text-primary">
+          Set your AI persona
+        </h2>
         <p className="text-sm text-text-secondary mt-1">
           What should the assistant call itself, and how should it sound?
         </p>
@@ -480,10 +492,12 @@ function StepPersona({
         <StyledSelect
           value={data.aiTone}
           onChange={(e) =>
-            onChange({ aiTone: e.target.value as PersonaForm['aiTone'] })
+            onChange({ aiTone: e.target.value as PersonaForm["aiTone"] })
           }
         >
-          <option value="warm">Warm — friendly & empathetic (recommended)</option>
+          <option value="warm">
+            Warm — friendly & empathetic (recommended)
+          </option>
           <option value="formal">Formal — businesslike</option>
           <option value="casual">Casual — relaxed & playful</option>
         </StyledSelect>
@@ -493,7 +507,9 @@ function StepPersona({
         <StyledSelect
           value={data.aiLanguage}
           onChange={(e) =>
-            onChange({ aiLanguage: e.target.value as PersonaForm['aiLanguage'] })
+            onChange({
+              aiLanguage: e.target.value as PersonaForm["aiLanguage"],
+            })
           }
         >
           <option value="hinglish">Hinglish (recommended for India)</option>
@@ -513,7 +529,7 @@ function StepPersona({
         Save persona
       </button>
     </div>
-  )
+  );
 }
 
 function StepDone({ onFinish }: { onFinish: () => void }) {
@@ -534,146 +550,148 @@ function StepDone({ onFinish }: { onFinish: () => void }) {
         Go to inbox
       </button>
     </div>
-  )
+  );
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 interface ChannelError {
-  response?: { data?: { error?: { message?: string } } }
+  response?: { data?: { error?: { message?: string } } };
 }
 
 export function OnboardingPage() {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const [params, setParams] = useSearchParams()
-  const tenant = useAuthStore((s) => s.tenant)
-  const me = useAuthStore((s) => s.agent)
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const tenant = useAuthStore((s) => s.tenant);
+  const me = useAuthStore((s) => s.agent);
 
   const initialStep: number = useMemo(() => {
-    if (params.get('installed') === '1' || tenant?.shopifyDomain) {
+    if (params.get("installed") === "1" || tenant?.shopifyDomain) {
       // Skip past the Shopify step.
-      return 2
+      return 2;
     }
-    return 0
-  }, [params, tenant?.shopifyDomain])
+    return 0;
+  }, [params, tenant?.shopifyDomain]);
 
-  const [step, setStep] = useState<number>(initialStep)
+  const [step, setStep] = useState<number>(initialStep);
   const [completed, setCompleted] = useState<Set<StepId>>(() => {
-    const s = new Set<StepId>()
-    if (tenant?.shopifyDomain) s.add('shopify')
-    if (params.get('installed') === '1') s.add('shopify')
-    return s
-  })
+    const s = new Set<StepId>();
+    if (tenant?.shopifyDomain) s.add("shopify");
+    if (params.get("installed") === "1") s.add("shopify");
+    return s;
+  });
 
   // Show error toast on ?error=...
   useEffect(() => {
-    const err = params.get('error')
+    const err = params.get("error");
     if (err) {
-      toast.error(`Setup error: ${err.replace(/_/g, ' ')}`)
-      const next = new URLSearchParams(params)
-      next.delete('error')
-      setParams(next, { replace: true })
+      toast.error(`Setup error: ${err.replace(/_/g, " ")}`);
+      const next = new URLSearchParams(params);
+      next.delete("error");
+      setParams(next, { replace: true });
     }
-  }, [params, setParams])
+  }, [params, setParams]);
 
   const [invite, setInvite] = useState<InviteForm>({
-    name: '',
-    email: '',
-    role: 'agent',
-  })
+    name: "",
+    email: "",
+    role: "agent",
+  });
 
   const [whatsapp, setWhatsapp] = useState<WhatsAppCreds>({
-    phoneNumberId: '',
-    accessToken: '',
-    verifyToken: '',
-    appSecret: '',
-  })
+    phoneNumberId: "",
+    accessToken: "",
+    verifyToken: "",
+    appSecret: "",
+  });
 
   const [instagram, setInstagram] = useState<InstagramCreds>({
-    pageId: '',
-    accessToken: '',
-    verifyToken: '',
-  })
+    pageId: "",
+    accessToken: "",
+    verifyToken: "",
+  });
 
   const [persona, setPersona] = useState<PersonaForm>({
-    aiPersonaName: tenant?.aiPersonaName ?? 'Sahay',
-    aiTone: (tenant?.aiTone ?? 'warm') as PersonaForm['aiTone'],
-    aiLanguage: (tenant?.aiLanguage ?? 'hinglish') as PersonaForm['aiLanguage'],
-  })
+    aiPersonaName: tenant?.aiPersonaName ?? "Sahay",
+    aiTone: (tenant?.aiTone ?? "warm") as PersonaForm["aiTone"],
+    aiLanguage: (tenant?.aiLanguage ?? "hinglish") as PersonaForm["aiLanguage"],
+  });
 
-  const totalSteps = STEPS.length
-  const currentStep = STEPS[step]
+  const totalSteps = STEPS.length;
+  const currentStep = STEPS[step];
 
   const markComplete = (id: StepId) => {
     setCompleted((prev) => {
-      const next = new Set(prev)
-      next.add(id)
-      return next
-    })
-  }
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
 
-  const goNext = () => setStep((s) => Math.min(s + 1, totalSteps - 1))
-  const goBack = () => setStep((s) => Math.max(s - 1, 0))
+  const goNext = () => setStep((s) => Math.min(s + 1, totalSteps - 1));
+  const goBack = () => setStep((s) => Math.max(s - 1, 0));
 
   const inviteMutation = useMutation({
     mutationFn: async () => {
-      await api.post('/agents/invite', invite)
+      await api.post("/agents/invite", invite);
     },
     onSuccess: () => {
-      toast.success(`Invite sent to ${invite.email}`)
-      markComplete('agent')
-      queryClient.invalidateQueries({ queryKey: ['agents'] })
-      goNext()
+      toast.success(`Invite sent to ${invite.email}`);
+      markComplete("agent");
+      queryClient.invalidateQueries({ queryKey: ["agents"] });
+      goNext();
     },
     onError: (err: ChannelError) =>
-      toast.error(err?.response?.data?.error?.message ?? 'Invite failed'),
-  })
+      toast.error(err?.response?.data?.error?.message ?? "Invite failed"),
+  });
 
   const whatsappMutation = useMutation({
     mutationFn: async () => {
-      await api.patch('/settings/channels', { whatsapp })
+      await api.patch("/settings/channels", { whatsapp });
     },
     onSuccess: () => {
-      toast.success('WhatsApp connected')
-      markComplete('whatsapp')
-      goNext()
+      toast.success("WhatsApp connected");
+      markComplete("whatsapp");
+      goNext();
     },
     onError: (err: ChannelError) =>
-      toast.error(err?.response?.data?.error?.message ?? 'WhatsApp failed'),
-  })
+      toast.error(err?.response?.data?.error?.message ?? "WhatsApp failed"),
+  });
 
   const instagramMutation = useMutation({
     mutationFn: async () => {
-      await api.patch('/settings/channels', { instagram })
+      await api.patch("/settings/channels", { instagram });
     },
     onSuccess: () => {
-      toast.success('Instagram connected')
-      markComplete('instagram')
-      goNext()
+      toast.success("Instagram connected");
+      markComplete("instagram");
+      goNext();
     },
     onError: (err: ChannelError) =>
-      toast.error(err?.response?.data?.error?.message ?? 'Instagram failed'),
-  })
+      toast.error(err?.response?.data?.error?.message ?? "Instagram failed"),
+  });
 
   const personaMutation = useMutation({
     mutationFn: async () => {
-      await api.patch('/settings/ai', persona)
+      await api.patch("/settings/ai", persona);
     },
     onSuccess: () => {
-      toast.success('AI persona saved')
-      markComplete('persona')
-      goNext()
+      toast.success("AI persona saved");
+      markComplete("persona");
+      goNext();
     },
     onError: (err: ChannelError) =>
-      toast.error(err?.response?.data?.error?.message ?? 'Could not save persona'),
-  })
+      toast.error(
+        err?.response?.data?.error?.message ?? "Could not save persona",
+      ),
+  });
 
   const handleShopifyInstall = (shop: string) => {
-    if (!shop) return
-    const url = `/api/shopify/install?shop=${encodeURIComponent(`${shop}.myshopify.com`)}`
-    window.location.href = url
-  }
+    if (!shop) return;
+    const url = `/api/shopify/install?shop=${encodeURIComponent(`${shop}.myshopify.com`)}`;
+    window.location.href = url;
+  };
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
@@ -704,21 +722,21 @@ export function OnboardingPage() {
           </div>
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {STEPS.map((s, i) => {
-              const StepIcon = s.icon
-              const done = completed.has(s.id) || i < step
-              const active = i === step
+              const StepIcon = s.icon;
+              const done = completed.has(s.id) || i < step;
+              const active = i === step;
               return (
                 <button
                   type="button"
                   key={s.id}
                   onClick={() => setStep(i)}
                   className={cn(
-                    'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors flex-shrink-0',
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors flex-shrink-0",
                     active
-                      ? 'bg-primary/10 border-primary text-primary'
+                      ? "bg-primary/10 border-primary text-primary"
                       : done
-                        ? 'bg-success/10 border-success/30 text-success'
-                        : 'bg-surface border-border text-text-secondary',
+                        ? "bg-success/10 border-success/30 text-success"
+                        : "bg-surface border-border text-text-secondary",
                   )}
                 >
                   {done ? (
@@ -728,21 +746,21 @@ export function OnboardingPage() {
                   )}
                   {s.label}
                 </button>
-              )
+              );
             })}
           </div>
         </div>
 
         {/* Step body */}
         <div className="bg-surface border border-border rounded-2xl shadow-sm p-6">
-          {currentStep.id === 'welcome' && <StepWelcome />}
-          {currentStep.id === 'shopify' && (
+          {currentStep.id === "welcome" && <StepWelcome />}
+          {currentStep.id === "shopify" && (
             <StepShopify
               shopifyDomain={tenant?.shopifyDomain ?? null}
               onShopify={handleShopifyInstall}
             />
           )}
-          {currentStep.id === 'agent' && (
+          {currentStep.id === "agent" && (
             <StepInviteAgent
               data={invite}
               onChange={(d) => setInvite((p) => ({ ...p, ...d }))}
@@ -750,7 +768,7 @@ export function OnboardingPage() {
               pending={inviteMutation.isPending}
             />
           )}
-          {currentStep.id === 'whatsapp' && (
+          {currentStep.id === "whatsapp" && (
             <StepWhatsApp
               data={whatsapp}
               onChange={(d) => setWhatsapp((p) => ({ ...p, ...d }))}
@@ -758,7 +776,7 @@ export function OnboardingPage() {
               pending={whatsappMutation.isPending}
             />
           )}
-          {currentStep.id === 'instagram' && (
+          {currentStep.id === "instagram" && (
             <StepInstagram
               data={instagram}
               onChange={(d) => setInstagram((p) => ({ ...p, ...d }))}
@@ -766,7 +784,7 @@ export function OnboardingPage() {
               pending={instagramMutation.isPending}
             />
           )}
-          {currentStep.id === 'persona' && (
+          {currentStep.id === "persona" && (
             <StepPersona
               data={persona}
               onChange={(d) => setPersona((p) => ({ ...p, ...d }))}
@@ -774,8 +792,8 @@ export function OnboardingPage() {
               pending={personaMutation.isPending}
             />
           )}
-          {currentStep.id === 'done' && (
-            <StepDone onFinish={() => navigate('/inbox')} />
+          {currentStep.id === "done" && (
+            <StepDone onFinish={() => navigate("/inbox")} />
           )}
 
           {/* Navigation */}
@@ -790,7 +808,7 @@ export function OnboardingPage() {
             </button>
 
             <div className="flex items-center gap-2">
-              {currentStep.id !== 'done' && (
+              {currentStep.id !== "done" && (
                 <button
                   type="button"
                   onClick={goNext}
@@ -799,7 +817,7 @@ export function OnboardingPage() {
                   Skip for now
                 </button>
               )}
-              {currentStep.id !== 'done' && (
+              {currentStep.id !== "done" && (
                 <button
                   type="button"
                   onClick={goNext}
@@ -813,10 +831,10 @@ export function OnboardingPage() {
         </div>
 
         <p className="text-center text-xs text-text-secondary mt-4">
-          Signed in as <span className="text-text-primary">{me?.email}</span> ·{' '}
+          Signed in as <span className="text-text-primary">{me?.email}</span> ·{" "}
           <button
             type="button"
-            onClick={() => navigate('/inbox')}
+            onClick={() => navigate("/inbox")}
             className="text-primary hover:underline"
           >
             Skip onboarding
@@ -824,5 +842,5 @@ export function OnboardingPage() {
         </p>
       </div>
     </div>
-  )
+  );
 }

@@ -7,9 +7,9 @@
 // HTML. The response is cacheable for 5 minutes; the inline HTML never changes
 // across deploys.
 
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-const SWAGGER_VERSION = '5.17.14'
+const SWAGGER_VERSION = "5.17.14";
 
 const HTML = `<!doctype html>
 <html lang="en">
@@ -47,17 +47,17 @@ const HTML = `<!doctype html>
     </script>
   </body>
 </html>
-`
+`;
 
 export default function handler(req: VercelRequest, res: VercelResponse): void {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET')
-    res.status(405).end('Method not allowed')
-    return
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    res.status(405).end("Method not allowed");
+    return;
   }
-  res.setHeader('Content-Type', 'text/html; charset=utf-8')
-  res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300')
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
   // Swagger UI uses inline scripts; loosen X-Frame-Options for embedding.
-  res.setHeader('X-Content-Type-Options', 'nosniff')
-  res.status(200).end(HTML)
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.status(200).end(HTML);
 }

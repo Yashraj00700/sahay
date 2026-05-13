@@ -16,36 +16,36 @@
  *   1  any failure — full error printed to stderr
  */
 
-import 'dotenv/config'
+import "dotenv/config";
 
-import { drizzle } from 'drizzle-orm/postgres-js'
-import { migrate } from 'drizzle-orm/postgres-js/migrator'
-import postgres from 'postgres'
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import postgres from "postgres";
 
 async function main(): Promise<void> {
-  const connectionString = process.env.DATABASE_URL
+  const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    console.error('[migrate-prod] DATABASE_URL is not set')
-    process.exit(1)
+    console.error("[migrate-prod] DATABASE_URL is not set");
+    process.exit(1);
   }
 
   // Single connection — drizzle's migrator is single-threaded by design.
-  const client = postgres(connectionString, { max: 1 })
-  const db = drizzle(client)
+  const client = postgres(connectionString, { max: 1 });
+  const db = drizzle(client);
 
-  const startedAt = Date.now()
-  console.log('[migrate-prod] applying migrations from ./drizzle …')
+  const startedAt = Date.now();
+  console.log("[migrate-prod] applying migrations from ./drizzle …");
 
   try {
-    await migrate(db, { migrationsFolder: './drizzle' })
-    const elapsedMs = Date.now() - startedAt
-    console.log(`[migrate-prod] ✓ done in ${elapsedMs}ms`)
+    await migrate(db, { migrationsFolder: "./drizzle" });
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`[migrate-prod] ✓ done in ${elapsedMs}ms`);
   } catch (err) {
-    console.error('[migrate-prod] ✗ migration failed:', err)
-    process.exit(1)
+    console.error("[migrate-prod] ✗ migration failed:", err);
+    process.exit(1);
   } finally {
-    await client.end({ timeout: 5 })
+    await client.end({ timeout: 5 });
   }
 }
 
-void main()
+void main();

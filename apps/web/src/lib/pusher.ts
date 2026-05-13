@@ -1,22 +1,22 @@
-import Pusher from 'pusher-js'
+import Pusher from "pusher-js";
 
 export type RealtimeEvent =
-  | 'message:new'
-  | 'message:updated'
-  | 'conversation:updated'
-  | 'conversation:assigned'
-  | 'agent:typing'
-  | 'agent:viewing'
-  | 'agent:presence'
-  | 'ai:suggestion'
-  | 'notification'
+  | "message:new"
+  | "message:updated"
+  | "conversation:updated"
+  | "conversation:assigned"
+  | "agent:typing"
+  | "agent:viewing"
+  | "agent:presence"
+  | "ai:suggestion"
+  | "notification";
 
 interface PusherSingleton {
-  instance: Pusher
-  token: string
+  instance: Pusher;
+  token: string;
 }
 
-let singleton: PusherSingleton | null = null
+let singleton: PusherSingleton | null = null;
 
 /**
  * Returns a process-wide Pusher singleton bound to the supplied JWT.
@@ -27,17 +27,17 @@ let singleton: PusherSingleton | null = null
  */
 export function getPusher(token: string): Pusher {
   if (singleton && singleton.token === token) {
-    return singleton.instance
+    return singleton.instance;
   }
 
   if (singleton) {
-    singleton.instance.disconnect()
-    singleton = null
+    singleton.instance.disconnect();
+    singleton = null;
   }
 
-  const key = import.meta.env.VITE_PUSHER_KEY
-  const cluster = import.meta.env.VITE_PUSHER_CLUSTER
-  const apiUrl = import.meta.env.VITE_API_URL ?? ''
+  const key = import.meta.env.VITE_PUSHER_KEY;
+  const cluster = import.meta.env.VITE_PUSHER_CLUSTER;
+  const apiUrl = import.meta.env.VITE_API_URL ?? "";
 
   const instance = new Pusher(key, {
     cluster,
@@ -48,15 +48,15 @@ export function getPusher(token: string): Pusher {
       },
     },
     forceTLS: true,
-  })
+  });
 
-  singleton = { instance, token }
-  return instance
+  singleton = { instance, token };
+  return instance;
 }
 
 /** Tear down the singleton (use on logout). Safe to call when not connected. */
 export function disconnectPusher(): void {
-  if (!singleton) return
-  singleton.instance.disconnect()
-  singleton = null
+  if (!singleton) return;
+  singleton.instance.disconnect();
+  singleton = null;
 }

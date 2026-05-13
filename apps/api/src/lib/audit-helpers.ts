@@ -18,13 +18,13 @@
  *     // fire-and-forget — DO NOT await
  *     void auditConversationRead(ctx, id)
  */
-import type { AuthedContext } from './handler'
-import { auditRead, type AuditReadQuery } from '../services/audit'
+import type { AuthedContext } from "./handler";
+import { auditRead, type AuditReadQuery } from "../services/audit";
 
-type UnknownRecord = Record<string, unknown>
+type UnknownRecord = Record<string, unknown>;
 
 function isPlainObject(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -39,48 +39,49 @@ function isPlainObject(value: unknown): value is UnknownRecord {
  *   - Anything else is dropped to be safe.
  */
 export function redactQueryForAudit(query: unknown): AuditReadQuery {
-  if (!isPlainObject(query)) return {}
+  if (!isPlainObject(query)) return {};
 
-  const out: AuditReadQuery = {}
-  const piiKeys = new Set(['search', 'q', 'query', 'phone', 'email', 'name'])
+  const out: AuditReadQuery = {};
+  const piiKeys = new Set(["search", "q", "query", "phone", "email", "name"]);
   const allowKeys = new Set([
-    'page',
-    'pageSize',
-    'limit',
-    'status',
-    'channel',
-    'sortBy',
-    'sortDir',
-    'assignedTo',
-    'unassigned',
-    'tier',
-  ])
+    "page",
+    "pageSize",
+    "limit",
+    "status",
+    "channel",
+    "sortBy",
+    "sortDir",
+    "assignedTo",
+    "unassigned",
+    "tier",
+  ]);
 
-  let hasSearch = false
+  let hasSearch = false;
   for (const [key, value] of Object.entries(query)) {
     if (piiKeys.has(key)) {
-      if (value !== undefined && value !== null && value !== '') hasSearch = true
-      continue
+      if (value !== undefined && value !== null && value !== "")
+        hasSearch = true;
+      continue;
     }
-    if (key === 'cursor') {
-      out.hasCursor = value !== undefined && value !== null && value !== ''
-      continue
+    if (key === "cursor") {
+      out.hasCursor = value !== undefined && value !== null && value !== "";
+      continue;
     }
     if (allowKeys.has(key)) {
-      out[key] = value
+      out[key] = value;
     }
   }
-  if (hasSearch) out.hasSearch = true
-  return out
+  if (hasSearch) out.hasSearch = true;
+  return out;
 }
 
 interface BaseAuditArgs {
-  tenantId: string
-  actorId: string
-  actorEmail: string
-  ipAddress?: string
-  userAgent?: string
-  requestId?: string
+  tenantId: string;
+  actorId: string;
+  actorEmail: string;
+  ipAddress?: string;
+  userAgent?: string;
+  requestId?: string;
 }
 
 function baseFromCtx(ctx: AuthedContext): BaseAuditArgs {
@@ -91,17 +92,17 @@ function baseFromCtx(ctx: AuthedContext): BaseAuditArgs {
     ipAddress: ctx.ip,
     userAgent: ctx.userAgent,
     requestId: ctx.requestId,
-  }
+  };
 }
 
 async function safeAudit(fn: () => Promise<void>): Promise<void> {
   try {
-    await fn()
+    await fn();
   } catch (err) {
     // Defense-in-depth: auditAction already swallows DB errors. This guards
     // against synchronous failures (e.g. metadata serialization) so a bad
     // audit call can never propagate up into the route handler.
-    console.error('Audit helper failed (suppressed):', err)
+    console.error("Audit helper failed (suppressed):", err);
   }
 }
 
@@ -115,10 +116,10 @@ export function auditConversationRead(
   return safeAudit(() =>
     auditRead({
       ...baseFromCtx(ctx),
-      resourceType: 'conversation',
+      resourceType: "conversation",
       resourceId: conversationId,
     }),
-  )
+  );
 }
 
 /**
@@ -133,10 +134,10 @@ export function auditConversationListRead(
   return safeAudit(() =>
     auditRead({
       ...baseFromCtx(ctx),
-      resourceType: 'conversation_list',
+      resourceType: "conversation_list",
       query: redactQueryForAudit(query),
     }),
-  )
+  );
 }
 
 /**
@@ -149,10 +150,10 @@ export function auditCustomerRead(
   return safeAudit(() =>
     auditRead({
       ...baseFromCtx(ctx),
-      resourceType: 'customer',
+      resourceType: "customer",
       resourceId: customerId,
     }),
-  )
+  );
 }
 
 /**
@@ -165,10 +166,10 @@ export function auditCustomerListRead(
   return safeAudit(() =>
     auditRead({
       ...baseFromCtx(ctx),
-      resourceType: 'customer_list',
+      resourceType: "customer_list",
       query: redactQueryForAudit(query),
     }),
-  )
+  );
 }
 
 /**
@@ -185,9 +186,9 @@ export function auditMessagesRead(
   return safeAudit(() =>
     auditRead({
       ...baseFromCtx(ctx),
-      resourceType: 'conversation_messages',
+      resourceType: "conversation_messages",
       resourceId: conversationId,
       query: { messageCount },
     }),
-  )
+  );
 }

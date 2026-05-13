@@ -9,75 +9,82 @@
 //
 // Auth + tenant scoping match /api/search.
 
-import { z } from 'zod'
-import { sql } from 'drizzle-orm'
+import { z } from "zod";
+import { sql } from "drizzle-orm";
 import type {
   MessageSearchResult,
   CustomerSearchResult,
   SearchResponse,
-} from '@sahay/shared'
-import { defineAuthedHandler, parseQuery } from '../../apps/api/src/lib/handler'
-import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
+} from "@sahay/shared";
+import {
+  defineAuthedHandler,
+  parseQuery,
+} from "../../apps/api/src/lib/handler";
+import { enforce, limits } from "../../apps/api/src/lib/rate-limit";
 
-const SUGGEST_LIMIT = 5
+const SUGGEST_LIMIT = 5;
 
 const suggestQuerySchema = z.object({
-  q: z.string().default(''),
-})
+  q: z.string().default(""),
+});
 
 interface ConversationHitRow {
-  conversation_id: string
-  channel: string
-  status: string | null
-  primary_intent: string | null
-  customer_id: string
-  customer_name: string | null
-  customer_phone: string | null
-  customer_tier: string | null
-  snippet: string | null
-  matched_at: Date | null
-  rank: number
+  conversation_id: string;
+  channel: string;
+  status: string | null;
+  primary_intent: string | null;
+  customer_id: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_tier: string | null;
+  snippet: string | null;
+  matched_at: Date | null;
+  rank: number;
 }
 
 interface CustomerHitRow {
-  id: string
-  name: string | null
-  phone: string | null
-  email: string | null
-  city: string | null
-  tier: string | null
-  total_orders: number | null
+  id: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  city: string | null;
+  tier: string | null;
+  total_orders: number | null;
 }
 
 const empty = (tookMs: number): SearchResponse => ({
   results: { conversations: [], customers: [] },
   pagination: {
-    page: 1, pageSize: SUGGEST_LIMIT, total: 0, totalPages: 0,
-    hasNextPage: false, hasPreviousPage: false,
+    page: 1,
+    pageSize: SUGGEST_LIMIT,
+    total: 0,
+    totalPages: 0,
+    hasNextPage: false,
+    hasPreviousPage: false,
   },
   tookMs,
-})
+});
 
 export default defineAuthedHandler(
   async (req, res, ctx) => {
-    const startedAt = Date.now()
-    await enforce(limits.perTenant(), ctx.tenant.id)
+    const startedAt = Date.now();
+    await enforce(limits.perTenant(), ctx.tenant.id);
 
-    const { q } = parseQuery(suggestQuerySchema, req.query)
-    const trimmed = q.trim()
-    const tenantId = ctx.tenant.id
+    const { q } = parseQuery(suggestQuerySchema, req.query);
+    const trimmed = q.trim();
+    const tenantId = ctx.tenant.id;
 
     // Same min-length policy as /api/search: silently empty, never 400.
     if (trimmed.length < 2) {
-      res.status(200).json(empty(Date.now() - startedAt))
-      return
+      res.status(200).json(empty(Date.now() - startedAt));
+      return;
     }
 
-    const tsq = sql`websearch_to_tsquery('simple', ${trimmed})`
-    const ilikePattern = `%${trimmed}%`
+    const tsq = sql`websearch_to_tsquery('simple', ${trimmed})`;
+    const ilikePattern = `%${trimmed}%`;
 
-    let conversationHits: MessageSearchResult[] = []
-    let customerHits: CustomerSearchResult[] = []
+    let conversationHits: MessageSearchResult[] = [];
+    let customerHits: CustomerSearchResult[] = [];
 
     await ctx.withTenant(async (tx) => {
       const hitsSql = sql`
@@ -129,7 +136,7 @@ export default defineAuthedHandler(
         LEFT JOIN msg_hits mh   ON mh.conversation_id = combined.conversation_id AND mh.rn = 1
         ORDER BY combined.rank DESC, c.updated_at DESC
         LIMIT ${SUGGEST_LIMIT}
-      `
+      `;
 
       const custSql = sql`
         SELECT
@@ -146,42 +153,49 @@ export default defineAuthedHandler(
           CASE WHEN name ILIKE ${ilikePattern} THEN 0 ELSE 1 END,
           COALESCE(total_orders, 0) DESC
         LIMIT ${SUGGEST_LIMIT}
-      `
+      `;
 
       const [hitsResult, custResult] = await Promise.all([
         tx.execute(hitsSql),
         tx.execute(custSql),
-      ])
+      ]);
 
-      const hitsRows = hitsResult as unknown as ConversationHitRow[]
-      const custRows = custResult as unknown as CustomerHitRow[]
+      const hitsRows = hitsResult as unknown as ConversationHitRow[];
+      const custRows = custResult as unknown as CustomerHitRow[];
 
-      conversationHits = hitsRows.map((r): MessageSearchResult => ({
-        conversationId: r.conversation_id,
-        channel: r.channel as MessageSearchResult['channel'],
-        status: (r.status ?? 'open') as MessageSearchResult['status'],
-        primaryIntent: r.primary_intent ?? undefined,
-        customerId: r.customer_id,
-        customerName: r.customer_name ?? undefined,
-        customerPhone: r.customer_phone ?? undefined,
-        customerTier: (r.customer_tier ?? 'new') as MessageSearchResult['customerTier'],
-        snippet: r.snippet?.slice(0, 160) ?? undefined,
-        matchedAt: r.matched_at ? new Date(r.matched_at).toISOString() : undefined,
-        rank: typeof r.rank === 'number' ? r.rank : Number(r.rank),
-      }))
+      conversationHits = hitsRows.map(
+        (r): MessageSearchResult => ({
+          conversationId: r.conversation_id,
+          channel: r.channel as MessageSearchResult["channel"],
+          status: (r.status ?? "open") as MessageSearchResult["status"],
+          primaryIntent: r.primary_intent ?? undefined,
+          customerId: r.customer_id,
+          customerName: r.customer_name ?? undefined,
+          customerPhone: r.customer_phone ?? undefined,
+          customerTier: (r.customer_tier ??
+            "new") as MessageSearchResult["customerTier"],
+          snippet: r.snippet?.slice(0, 160) ?? undefined,
+          matchedAt: r.matched_at
+            ? new Date(r.matched_at).toISOString()
+            : undefined,
+          rank: typeof r.rank === "number" ? r.rank : Number(r.rank),
+        }),
+      );
 
-      customerHits = custRows.map((r): CustomerSearchResult => ({
-        id: r.id,
-        name: r.name ?? undefined,
-        phone: r.phone ?? undefined,
-        email: r.email ?? undefined,
-        city: r.city ?? undefined,
-        tier: (r.tier ?? 'new') as CustomerSearchResult['tier'],
-        totalOrders: r.total_orders ?? 0,
-      }))
-    })
+      customerHits = custRows.map(
+        (r): CustomerSearchResult => ({
+          id: r.id,
+          name: r.name ?? undefined,
+          phone: r.phone ?? undefined,
+          email: r.email ?? undefined,
+          city: r.city ?? undefined,
+          tier: (r.tier ?? "new") as CustomerSearchResult["tier"],
+          totalOrders: r.total_orders ?? 0,
+        }),
+      );
+    });
 
-    const tookMs = Date.now() - startedAt
+    const tookMs = Date.now() - startedAt;
     const response: SearchResponse = {
       results: { conversations: conversationHits, customers: customerHits },
       pagination: {
@@ -193,9 +207,9 @@ export default defineAuthedHandler(
         hasPreviousPage: false,
       },
       tookMs,
-    }
+    };
 
-    res.status(200).json(response)
+    res.status(200).json(response);
   },
-  { methods: ['GET'] },
-)
+  { methods: ["GET"] },
+);

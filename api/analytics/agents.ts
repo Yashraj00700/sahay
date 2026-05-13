@@ -1,9 +1,12 @@
-import { z } from 'zod'
-import { sql } from 'drizzle-orm'
-import { defineAuthedHandler, parseQuery } from '../../apps/api/src/lib/handler'
-import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
-import { auditRead } from '../../apps/api/src/services/audit'
-import type { AgentMetric, AgentRole } from '@sahay/shared'
+import { z } from "zod";
+import { sql } from "drizzle-orm";
+import {
+  defineAuthedHandler,
+  parseQuery,
+} from "../../apps/api/src/lib/handler";
+import { enforce, limits } from "../../apps/api/src/lib/rate-limit";
+import { auditRead } from "../../apps/api/src/services/audit";
+import type { AgentMetric, AgentRole } from "@sahay/shared";
 
 /**
  * GET /api/analytics/agents
@@ -21,56 +24,57 @@ const querySchema = z
   .refine(
     (q) =>
       !q.dateFrom || !q.dateTo || new Date(q.dateFrom) <= new Date(q.dateTo),
-    { message: 'dateFrom must be <= dateTo' },
-  )
+    { message: "dateFrom must be <= dateTo" },
+  );
 
 const VALID_ROLES: ReadonlyArray<AgentRole> = [
-  'super_admin',
-  'admin',
-  'agent',
-  'viewer',
-]
+  "super_admin",
+  "admin",
+  "agent",
+  "viewer",
+];
 
 interface AgentRow {
-  agent_id: string
-  name: string
-  role: string
-  conversations_handled: number
-  conversations_resolved: number
-  avg_response_time_sec: number | null
-  avg_resolution_time_sec: number | null
-  avg_csat: number | null
-  csat_count: number
-  turn_count_avg: number | null
-  ai_assisted: number
+  agent_id: string;
+  name: string;
+  role: string;
+  conversations_handled: number;
+  conversations_resolved: number;
+  avg_response_time_sec: number | null;
+  avg_resolution_time_sec: number | null;
+  avg_csat: number | null;
+  csat_count: number;
+  turn_count_avg: number | null;
+  ai_assisted: number;
 }
 
-function defaultRange(q: z.infer<typeof querySchema>): { from: Date; to: Date } {
+function defaultRange(q: z.infer<typeof querySchema>): {
+  from: Date;
+  to: Date;
+} {
   if (q.dateFrom && q.dateTo) {
-    return { from: new Date(q.dateFrom), to: new Date(q.dateTo) }
+    return { from: new Date(q.dateFrom), to: new Date(q.dateTo) };
   }
-  const to = new Date()
-  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000)
-  return { from, to }
+  const to = new Date();
+  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { from, to };
 }
 
 function normalizeRole(role: string): AgentRole {
   return (VALID_ROLES as ReadonlyArray<string>).includes(role)
     ? (role as AgentRole)
-    : 'agent'
+    : "agent";
 }
 
 export default defineAuthedHandler(
   async (req, res, ctx) => {
-    await enforce(limits.perTenant(), ctx.tenant.id)
+    await enforce(limits.perTenant(), ctx.tenant.id);
 
-    const q = parseQuery(querySchema, req.query)
-    const { from, to } = defaultRange(q)
-    const tenantId = ctx.tenant.id
+    const q = parseQuery(querySchema, req.query);
+    const { from, to } = defaultRange(q);
+    const tenantId = ctx.tenant.id;
 
-    const agentFilter = q.agentId
-      ? sql`AND a.id = ${q.agentId}`
-      : sql``
+    const agentFilter = q.agentId ? sql`AND a.id = ${q.agentId}` : sql``;
 
     const rows = await ctx.withTenant(async (tx) => {
       // Single grouped query: LEFT JOIN agents → conversations within window
@@ -114,13 +118,13 @@ export default defineAuthedHandler(
         GROUP BY a.id, a.name, a.role
         ORDER BY conversations_handled DESC, a.name ASC
         LIMIT 500
-      `)) as unknown as AgentRow[]
-      return result
-    })
+      `)) as unknown as AgentRow[];
+      return result;
+    });
 
     const metrics: AgentMetric[] = rows.map((r) => {
-      const handled = Number(r.conversations_handled) || 0
-      const aiAssisted = Number(r.ai_assisted) || 0
+      const handled = Number(r.conversations_handled) || 0;
+      const aiAssisted = Number(r.ai_assisted) || 0;
       return {
         agentId: r.agent_id,
         name: r.name,
@@ -128,7 +132,8 @@ export default defineAuthedHandler(
         conversationsHandled: handled,
         conversationsResolved: Number(r.conversations_resolved) || 0,
         avgResponseTimeSec:
-          r.avg_response_time_sec !== null && r.avg_response_time_sec !== undefined
+          r.avg_response_time_sec !== null &&
+          r.avg_response_time_sec !== undefined
             ? Math.round(Number(r.avg_response_time_sec))
             : null,
         avgResolutionTimeSec:
@@ -147,14 +152,14 @@ export default defineAuthedHandler(
             : null,
         aiAssistedRate:
           handled > 0 ? Math.round((aiAssisted / handled) * 1000) / 1000 : 0,
-      }
-    })
+      };
+    });
 
     void auditRead({
       tenantId,
       actorId: ctx.agent.id,
       actorEmail: ctx.agent.email,
-      resourceType: 'analytics_agents',
+      resourceType: "analytics_agents",
       query: {
         scopedToOne: !!q.agentId,
         hasDateRange: !!(q.dateFrom && q.dateTo),
@@ -163,9 +168,9 @@ export default defineAuthedHandler(
       ipAddress: ctx.ip,
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
-    })
+    });
 
-    res.status(200).json({ data: metrics })
+    res.status(200).json({ data: metrics });
   },
-  { methods: ['GET'] },
-)
+  { methods: ["GET"] },
+);

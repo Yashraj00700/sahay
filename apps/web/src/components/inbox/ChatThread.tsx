@@ -1,70 +1,99 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useRef, useEffect, useState, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  UserPlus, BellOff, CheckCircle2, MoreHorizontal,
-  ChevronRight, Wifi, Sparkles,
-} from 'lucide-react'
-import clsx from 'clsx'
-import { api } from '../../lib/api'
-import { queryKeys } from '../../lib/queryClient'
-import { useAuthStore } from '../../store/auth.store'
-import type { Conversation, Message, MessageSenderType, PaginatedResponse } from '@sahay/shared'
-import { MessageBubble } from './MessageBubble'
-import { AISuggestionCard } from './AISuggestionCard'
-import { ReplyComposer } from './ReplyComposer'
+  UserPlus,
+  BellOff,
+  CheckCircle2,
+  MoreHorizontal,
+  ChevronRight,
+  Wifi,
+  Sparkles,
+} from "lucide-react";
+import clsx from "clsx";
+import { api } from "../../lib/api";
+import { queryKeys } from "../../lib/queryClient";
+import { useAuthStore } from "../../store/auth.store";
+import type {
+  Conversation,
+  Message,
+  MessageSenderType,
+  PaginatedResponse,
+} from "@sahay/shared";
+import { MessageBubble } from "./MessageBubble";
+import { AISuggestionCard } from "./AISuggestionCard";
+import { ReplyComposer } from "./ReplyComposer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ChatThreadProps {
-  conversationId: string
+  conversationId: string;
 }
 
 // ─── Channel Badge ────────────────────────────────────────────────────────────
 
 function ChannelBadge({ channel }: { channel: string }) {
   const config: Record<string, { label: string; cls: string }> = {
-    whatsapp:  { label: 'WhatsApp',  cls: 'bg-green-100 text-green-700 border-green-200' },
-    instagram: { label: 'Instagram', cls: 'bg-pink-100 text-pink-700 border-pink-200' },
-    webchat:   { label: 'Web Chat',  cls: 'bg-violet-100 text-violet-700 border-violet-200' },
-    email:     { label: 'Email',     cls: 'bg-blue-100 text-blue-700 border-blue-200' },
-  }
-  const c = config[channel] ?? config.webchat
+    whatsapp: {
+      label: "WhatsApp",
+      cls: "bg-green-100 text-green-700 border-green-200",
+    },
+    instagram: {
+      label: "Instagram",
+      cls: "bg-pink-100 text-pink-700 border-pink-200",
+    },
+    webchat: {
+      label: "Web Chat",
+      cls: "bg-violet-100 text-violet-700 border-violet-200",
+    },
+    email: { label: "Email", cls: "bg-blue-100 text-blue-700 border-blue-200" },
+  };
+  const c = config[channel] ?? config.webchat;
 
   return (
-    <span className={clsx('text-[10px] font-medium px-1.5 py-0.5 rounded border', c.cls)}>
+    <span
+      className={clsx(
+        "text-[10px] font-medium px-1.5 py-0.5 rounded border",
+        c.cls,
+      )}
+    >
       {c.label}
     </span>
-  )
+  );
 }
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; cls: string }> = {
-    open:     { label: 'Open',     cls: 'bg-emerald-100 text-emerald-700' },
-    pending:  { label: 'Pending',  cls: 'bg-amber-100 text-amber-700' },
-    snoozed:  { label: 'Snoozed',  cls: 'bg-slate-100 text-slate-600' },
-    resolved: { label: 'Resolved', cls: 'bg-gray-100 text-gray-500' },
-    closed:   { label: 'Closed',   cls: 'bg-gray-100 text-gray-400' },
-  }
-  const c = config[status] ?? config.open
+    open: { label: "Open", cls: "bg-emerald-100 text-emerald-700" },
+    pending: { label: "Pending", cls: "bg-amber-100 text-amber-700" },
+    snoozed: { label: "Snoozed", cls: "bg-slate-100 text-slate-600" },
+    resolved: { label: "Resolved", cls: "bg-gray-100 text-gray-500" },
+    closed: { label: "Closed", cls: "bg-gray-100 text-gray-400" },
+  };
+  const c = config[status] ?? config.open;
 
   return (
-    <span className={clsx('text-[10px] font-semibold px-2 py-0.5 rounded-full', c.cls)}>
+    <span
+      className={clsx(
+        "text-[10px] font-semibold px-2 py-0.5 rounded-full",
+        c.cls,
+      )}
+    >
       {c.label}
     </span>
-  )
+  );
 }
 
 // ─── Typing Indicator ─────────────────────────────────────────────────────────
 
-function TypingIndicator({ type }: { type: 'ai' | 'agent' }) {
-  if (type === 'ai') {
+function TypingIndicator({ type }: { type: "ai" | "agent" }) {
+  if (type === "ai") {
     return (
       <div className="flex items-end justify-end px-4 py-1">
         <div className="bg-gradient-to-br from-violet-600 to-violet-500 px-3 py-2 rounded-[18px_18px_4px_18px] flex items-center gap-1.5">
-          {[0, 1, 2].map(i => (
+          {[0, 1, 2].map((i) => (
             <motion.div
               key={i}
               animate={{ scaleY: [0.4, 1, 0.4], opacity: [0.5, 1, 0.5] }}
@@ -75,13 +104,13 @@ function TypingIndicator({ type }: { type: 'ai' | 'agent' }) {
           <span className="text-[9px] text-white/70 ml-1">✦ AI</span>
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="flex items-end px-4 py-1">
       <div className="bg-gray-100 px-3 py-2 rounded-[18px_18px_18px_4px] flex items-center gap-1">
-        {[0, 1, 2].map(i => (
+        {[0, 1, 2].map((i) => (
           <motion.div
             key={i}
             animate={{ y: [0, -3, 0] }}
@@ -91,7 +120,7 @@ function TypingIndicator({ type }: { type: 'ai' | 'agent' }) {
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 // ─── Loading Skeleton ─────────────────────────────────────────────────────────
@@ -120,123 +149,134 @@ function ThreadSkeleton() {
         <div className="h-8 w-36 bg-gray-100 rounded-[18px_18px_18px_4px] animate-pulse" />
       </div>
     </div>
-  )
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ChatThread({ conversationId }: ChatThreadProps) {
-  const agent = useAuthStore(s => s.agent)
-  const queryClient = useQueryClient()
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const [aiTyping, setAiTyping] = useState(false)
-  const [agentTyping, setAgentTyping] = useState(false)
+  const agent = useAuthStore((s) => s.agent);
+  const queryClient = useQueryClient();
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [aiTyping, setAiTyping] = useState(false);
+  const [agentTyping, setAgentTyping] = useState(false);
 
   // Fetch conversation detail
   const { data: conversation } = useQuery<Conversation>({
     queryKey: queryKeys.conversations.detail(conversationId),
     queryFn: async () => {
-      const res = await api.get<Conversation>(`/conversations/${conversationId}`)
-      return res.data
+      const res = await api.get<Conversation>(
+        `/conversations/${conversationId}`,
+      );
+      return res.data;
     },
     enabled: !!conversationId,
-  })
+  });
 
   // Fetch messages
-  const { data: messagesData, isLoading } = useQuery<PaginatedResponse<Message>>({
+  const { data: messagesData, isLoading } = useQuery<
+    PaginatedResponse<Message>
+  >({
     queryKey: queryKeys.conversations.messages(conversationId),
     queryFn: async () => {
       const res = await api.get<PaginatedResponse<Message>>(
-        `/conversations/${conversationId}/messages`
-      )
-      return res.data
+        `/conversations/${conversationId}/messages`,
+      );
+      return res.data;
     },
     enabled: !!conversationId,
     refetchInterval: 10_000,
-  })
+  });
 
   // Fetch AI suggestion
   const { data: aiSuggestion } = useQuery({
     queryKey: queryKeys.ai.suggestion(conversationId),
     queryFn: async () => {
-      const res = await api.get(`/ai/suggestion/${conversationId}`)
-      return res.data
+      const res = await api.get(`/ai/suggestion/${conversationId}`);
+      return res.data;
     },
     enabled: !!conversationId,
-  })
+  });
 
-  const messages = messagesData?.data ?? []
+  const messages = messagesData?.data ?? [];
 
   // Auto-scroll to bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, aiTyping])
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, aiTyping]);
 
   // Send message mutation
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
       const res = await api.post(`/conversations/${conversationId}/messages`, {
         content,
-        contentType: 'text',
-        senderType: 'agent',
-      })
-      return res.data
+        contentType: "text",
+        senderType: "agent",
+      });
+      return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.messages(conversationId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.conversations.messages(conversationId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.conversations.detail(conversationId),
+      });
     },
-  })
+  });
 
   // Status mutations
   const resolveMutation = useMutation({
     mutationFn: async () => {
-      await api.patch(`/conversations/${conversationId}/resolve`)
+      await api.patch(`/conversations/${conversationId}/resolve`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.conversations.detail(conversationId),
+      });
     },
-  })
+  });
 
   const snoozeMutation = useMutation({
     mutationFn: async () => {
       await api.patch(`/conversations/${conversationId}/snooze`, {
         until: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-      })
+      });
     },
-  })
+  });
 
   const handleAcceptSuggestion = useCallback(() => {
     if (aiSuggestion?.suggestion) {
-      sendMutation.mutate(aiSuggestion.suggestion)
+      sendMutation.mutate(aiSuggestion.suggestion);
     }
-  }, [aiSuggestion, sendMutation])
+  }, [aiSuggestion, sendMutation]);
 
   const handleEditSuggestion = useCallback(() => {
     // Pass suggestion text back to composer — handled by parent or local state
-  }, [])
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-[#F8F7FF]">
-
       {/* ── Header ────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           {/* Avatar */}
           <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center text-[12px] font-semibold text-violet-700 flex-shrink-0">
-            {(conversation?.customer?.name?.[0] ?? '?').toUpperCase()}
+            {(conversation?.customer?.name?.[0] ?? "?").toUpperCase()}
           </div>
 
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[14px] font-semibold text-gray-900 truncate">
-                {conversation?.customer?.name ?? 'Loading…'}
+                {conversation?.customer?.name ?? "Loading…"}
               </span>
               {conversation && <ChannelBadge channel={conversation.channel} />}
               {conversation && <StatusBadge status={conversation.status} />}
             </div>
             {conversation?.customer?.phone && (
-              <span className="text-[11px] text-gray-400">{conversation.customer.phone}</span>
+              <span className="text-[11px] text-gray-400">
+                {conversation.customer.phone}
+              </span>
             )}
           </div>
         </div>
@@ -262,12 +302,12 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
 
           <button
             onClick={() => resolveMutation.mutate()}
-            disabled={conversation?.status === 'resolved'}
+            disabled={conversation?.status === "resolved"}
             className={clsx(
-              'flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-medium rounded-lg transition-colors',
-              conversation?.status === 'resolved'
-                ? 'text-gray-300 cursor-not-allowed'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+              "flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-medium rounded-lg transition-colors",
+              conversation?.status === "resolved"
+                ? "text-gray-300 cursor-not-allowed"
+                : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm",
             )}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -290,7 +330,9 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
               <Wifi className="w-6 h-6 text-violet-400" />
             </div>
             <p className="text-[13px] text-gray-500">No messages yet.</p>
-            <p className="text-[12px] text-gray-400 mt-1">Start the conversation below.</p>
+            <p className="text-[12px] text-gray-400 mt-1">
+              Start the conversation below.
+            </p>
           </div>
         ) : (
           <AnimatePresence initial={false}>
@@ -298,7 +340,9 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                previousSenderType={idx > 0 ? messages[idx - 1].senderType : undefined}
+                previousSenderType={
+                  idx > 0 ? messages[idx - 1].senderType : undefined
+                }
               />
             ))}
           </AnimatePresence>
@@ -307,12 +351,22 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
         {/* Typing indicators */}
         <AnimatePresence>
           {aiTyping && (
-            <motion.div key="ai-typing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div
+              key="ai-typing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
               <TypingIndicator type="ai" />
             </motion.div>
           )}
           {agentTyping && (
-            <motion.div key="agent-typing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div
+              key="agent-typing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
               <TypingIndicator type="agent" />
             </motion.div>
           )}
@@ -328,12 +382,16 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
             suggestion={aiSuggestion.suggestion}
             confidence={aiSuggestion.confidence}
             citations={aiSuggestion.citations ?? []}
-            intent={aiSuggestion.intent ?? ''}
+            intent={aiSuggestion.intent ?? ""}
             onAccept={handleAcceptSuggestion}
             onEdit={handleEditSuggestion}
-            onDismiss={() => queryClient.removeQueries({ queryKey: queryKeys.ai.suggestion(conversationId) })}
+            onDismiss={() =>
+              queryClient.removeQueries({
+                queryKey: queryKeys.ai.suggestion(conversationId),
+              })
+            }
             onFeedback={(positive) => {
-              api.post(`/ai/feedback`, { conversationId, positive })
+              api.post(`/ai/feedback`, { conversationId, positive });
             }}
           />
         )}
@@ -342,10 +400,10 @@ export function ChatThread({ conversationId }: ChatThreadProps) {
       {/* ── Reply Composer ────────────────────────────────── */}
       <ReplyComposer
         conversationId={conversationId}
-        channel={conversation?.channel ?? 'webchat'}
+        channel={conversation?.channel ?? "webchat"}
         onSend={(content) => sendMutation.mutate(content)}
         customerName={conversation?.customer?.name}
       />
     </div>
-  )
+  );
 }

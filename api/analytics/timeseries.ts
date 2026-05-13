@@ -1,15 +1,18 @@
-import { z } from 'zod'
-import { sql } from 'drizzle-orm'
-import { defineAuthedHandler, parseQuery } from '../../apps/api/src/lib/handler'
-import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
-import { auditRead } from '../../apps/api/src/services/audit'
-import { ValidationError } from '../../apps/api/src/lib/errors'
+import { z } from "zod";
+import { sql } from "drizzle-orm";
+import {
+  defineAuthedHandler,
+  parseQuery,
+} from "../../apps/api/src/lib/handler";
+import { enforce, limits } from "../../apps/api/src/lib/rate-limit";
+import { auditRead } from "../../apps/api/src/services/audit";
+import { ValidationError } from "../../apps/api/src/lib/errors";
 import type {
   TimeseriesInterval,
   TimeseriesMetric,
   TimeseriesPoint,
   TimeseriesResponse,
-} from '@sahay/shared'
+} from "@sahay/shared";
 
 /**
  * GET /api/analytics/timeseries
@@ -25,26 +28,29 @@ import type {
 
 const querySchema = z
   .object({
-    metric: z.enum(['conversations', 'resolutions', 'messages', 'csat']),
-    interval: z.enum(['hour', 'day', 'week']).default('day'),
+    metric: z.enum(["conversations", "resolutions", "messages", "csat"]),
+    interval: z.enum(["hour", "day", "week"]).default("day"),
     dateFrom: z.string().datetime().optional(),
     dateTo: z.string().datetime().optional(),
   })
   .refine(
     (q) =>
       !q.dateFrom || !q.dateTo || new Date(q.dateFrom) <= new Date(q.dateTo),
-    { message: 'dateFrom must be <= dateTo' },
-  )
+    { message: "dateFrom must be <= dateTo" },
+  );
 
-const MAX_BUCKETS = 365
+const MAX_BUCKETS = 365;
 
-function resolveRange(q: z.infer<typeof querySchema>): { from: Date; to: Date } {
+function resolveRange(q: z.infer<typeof querySchema>): {
+  from: Date;
+  to: Date;
+} {
   if (q.dateFrom && q.dateTo) {
-    return { from: new Date(q.dateFrom), to: new Date(q.dateTo) }
+    return { from: new Date(q.dateFrom), to: new Date(q.dateTo) };
   }
-  const to = new Date()
-  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000)
-  return { from, to }
+  const to = new Date();
+  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { from, to };
 }
 
 function maxBucketsExceeded(
@@ -52,19 +58,19 @@ function maxBucketsExceeded(
   to: Date,
   interval: TimeseriesInterval,
 ): boolean {
-  const ms = to.getTime() - from.getTime()
+  const ms = to.getTime() - from.getTime();
   const bucketMs =
-    interval === 'hour'
+    interval === "hour"
       ? 60 * 60 * 1000
-      : interval === 'day'
+      : interval === "day"
         ? 24 * 60 * 60 * 1000
-        : 7 * 24 * 60 * 60 * 1000
-  return Math.ceil(ms / bucketMs) > MAX_BUCKETS
+        : 7 * 24 * 60 * 60 * 1000;
+  return Math.ceil(ms / bucketMs) > MAX_BUCKETS;
 }
 
 interface BucketRow {
-  bucket: string | Date
-  value: number | string | null
+  bucket: string | Date;
+  value: number | string | null;
 }
 
 function buildSql(
@@ -76,9 +82,9 @@ function buildSql(
 ) {
   // date_trunc takes a string literal — we're guarded by the zod enum.
   const trunc =
-    interval === 'hour' ? 'hour' : interval === 'week' ? 'week' : 'day'
+    interval === "hour" ? "hour" : interval === "week" ? "week" : "day";
 
-  if (metric === 'conversations') {
+  if (metric === "conversations") {
     return sql`
       SELECT
         date_trunc(${trunc}, created_at) AS bucket,
@@ -90,9 +96,9 @@ function buildSql(
       GROUP BY 1
       ORDER BY 1 ASC
       LIMIT ${MAX_BUCKETS}
-    `
+    `;
   }
-  if (metric === 'resolutions') {
+  if (metric === "resolutions") {
     return sql`
       SELECT
         date_trunc(${trunc}, resolved_at) AS bucket,
@@ -105,9 +111,9 @@ function buildSql(
       GROUP BY 1
       ORDER BY 1 ASC
       LIMIT ${MAX_BUCKETS}
-    `
+    `;
   }
-  if (metric === 'messages') {
+  if (metric === "messages") {
     return sql`
       SELECT
         date_trunc(${trunc}, created_at) AS bucket,
@@ -120,7 +126,7 @@ function buildSql(
       GROUP BY 1
       ORDER BY 1 ASC
       LIMIT ${MAX_BUCKETS}
-    `
+    `;
   }
   // csat
   return sql`
@@ -136,45 +142,48 @@ function buildSql(
     GROUP BY 1
     ORDER BY 1 ASC
     LIMIT ${MAX_BUCKETS}
-  `
+  `;
 }
 
 export default defineAuthedHandler(
   async (req, res, ctx) => {
-    await enforce(limits.perTenant(), ctx.tenant.id)
+    await enforce(limits.perTenant(), ctx.tenant.id);
 
-    const q = parseQuery(querySchema, req.query)
-    const { from, to } = resolveRange(q)
+    const q = parseQuery(querySchema, req.query);
+    const { from, to } = resolveRange(q);
 
     if (maxBucketsExceeded(from, to, q.interval)) {
       throw new ValidationError(
         `Range exceeds ${MAX_BUCKETS} buckets at ${q.interval} interval. Pick a coarser interval or shorter range.`,
-      )
+      );
     }
 
-    const tenantId = ctx.tenant.id
+    const tenantId = ctx.tenant.id;
 
     const rows = await ctx.withTenant(async (tx) => {
       const result = (await tx.execute(
         buildSql(q.metric, q.interval, tenantId, from, to),
-      )) as unknown as BucketRow[]
-      return result
-    })
+      )) as unknown as BucketRow[];
+      return result;
+    });
 
     const points: TimeseriesPoint[] = rows.map((r) => {
       const ts =
-        r.bucket instanceof Date ? r.bucket.toISOString() : new Date(r.bucket).toISOString()
-      const raw = r.value === null || r.value === undefined ? 0 : Number(r.value)
+        r.bucket instanceof Date
+          ? r.bucket.toISOString()
+          : new Date(r.bucket).toISOString();
+      const raw =
+        r.value === null || r.value === undefined ? 0 : Number(r.value);
       // CSAT we round to 2dp; counts are already integers.
-      const value = q.metric === 'csat' ? Math.round(raw * 100) / 100 : raw
-      return { ts, value }
-    })
+      const value = q.metric === "csat" ? Math.round(raw * 100) / 100 : raw;
+      return { ts, value };
+    });
 
     void auditRead({
       tenantId,
       actorId: ctx.agent.id,
       actorEmail: ctx.agent.email,
-      resourceType: 'analytics_timeseries',
+      resourceType: "analytics_timeseries",
       query: {
         metric: q.metric,
         interval: q.interval,
@@ -184,7 +193,7 @@ export default defineAuthedHandler(
       ipAddress: ctx.ip,
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
-    })
+    });
 
     const body: TimeseriesResponse = {
       metric: q.metric,
@@ -192,8 +201,8 @@ export default defineAuthedHandler(
       dateFrom: from.toISOString(),
       dateTo: to.toISOString(),
       points,
-    }
-    res.status(200).json(body)
+    };
+    res.status(200).json(body);
   },
-  { methods: ['GET'] },
-)
+  { methods: ["GET"] },
+);

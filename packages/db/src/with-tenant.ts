@@ -1,11 +1,11 @@
-import { sql } from 'drizzle-orm'
-import { db } from './index'
+import { sql } from "drizzle-orm";
+import { db } from "./index";
 
 /**
  * Drizzle transaction type. Inferred from `db.transaction(...)`'s callback
  * argument so we never get out of sync if drizzle's types change.
  */
-export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Run `fn` inside a transaction with `app.tenant_id` set to `tenantId`.
@@ -27,14 +27,16 @@ export async function withTenant<T>(
   tenantId: string,
   fn: (tx: Tx) => Promise<T>,
 ): Promise<T> {
-  if (!tenantId || typeof tenantId !== 'string') {
-    throw new Error('withTenant: tenantId must be a non-empty string')
+  if (!tenantId || typeof tenantId !== "string") {
+    throw new Error("withTenant: tenantId must be a non-empty string");
   }
   return db.transaction(async (tx) => {
     // `set_config(name, value, is_local)` — is_local=true scopes to this tx.
-    await tx.execute(sql`SELECT set_config('app.tenant_id', ${tenantId}, true)`)
-    return fn(tx)
-  })
+    await tx.execute(
+      sql`SELECT set_config('app.tenant_id', ${tenantId}, true)`,
+    );
+    return fn(tx);
+  });
 }
 
 /**
@@ -56,17 +58,17 @@ export async function withSystemBypass<T>(fn: () => Promise<T>): Promise<T> {
   // Vercel sets VERCEL_REQUEST_ID / x-vercel-id; Inngest sets INNGEST_EVENT_ID.
   // We only warn — never throw — to avoid breaking legitimate uses.
   if (
-    typeof process !== 'undefined' &&
+    typeof process !== "undefined" &&
     process.env.VERCEL_REGION &&
     !process.env.INNGEST_EVENT_KEY &&
     !process.env.SAHAY_SYSTEM_JOB
   ) {
     // eslint-disable-next-line no-console
     console.warn(
-      '[withSystemBypass] Called outside an Inngest/system context. ' +
-        'Cross-tenant access from a request handler is almost always a bug. ' +
-        'Set SAHAY_SYSTEM_JOB=1 in the function env if this is intentional.',
-    )
+      "[withSystemBypass] Called outside an Inngest/system context. " +
+        "Cross-tenant access from a request handler is almost always a bug. " +
+        "Set SAHAY_SYSTEM_JOB=1 in the function env if this is intentional.",
+    );
   }
-  return fn()
+  return fn();
 }

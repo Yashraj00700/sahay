@@ -1,26 +1,26 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useAuthStore } from '../store/auth.store'
+import { useCallback, useEffect, useState } from "react";
+import { useAuthStore } from "../store/auth.store";
 import {
   registerPushAndSubscribe,
   unsubscribePush,
   getPushSubscriptionState,
-} from '../lib/push'
+} from "../lib/push";
 
 export interface UsePushNotificationsResult {
   /** True if the browser supports service-worker + push at all. */
-  supported: boolean
+  supported: boolean;
   /** Notification.permission, or 'denied' on unsupported browsers. */
-  permission: NotificationPermission
+  permission: NotificationPermission;
   /** True when an active subscription exists for this browser. */
-  subscribed: boolean
+  subscribed: boolean;
   /** True while a subscribe / unsubscribe is in flight. */
-  loading: boolean
+  loading: boolean;
   /** Last error from subscribe/unsubscribe, surfaced to the UI. */
-  error: string | null
+  error: string | null;
   /** Subscribes the browser. Must be called from a user gesture. */
-  subscribe: () => Promise<void>
+  subscribe: () => Promise<void>;
   /** Unsubscribes locally + on the server. */
-  unsubscribe: () => Promise<void>
+  unsubscribe: () => Promise<void>;
 }
 
 /**
@@ -33,64 +33,69 @@ export interface UsePushNotificationsResult {
  * inside `subscribe()`, which the caller must invoke from a click.
  */
 export function usePushNotifications(): UsePushNotificationsResult {
-  const token = useAuthStore((s) => s.token)
+  const token = useAuthStore((s) => s.token);
 
-  const [supported, setSupported] = useState(false)
-  const [permission, setPermission] = useState<NotificationPermission>('default')
-  const [subscribed, setSubscribed] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [supported, setSupported] = useState(false);
+  const [permission, setPermission] =
+    useState<NotificationPermission>("default");
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Hydrate state from the browser on mount and whenever the token
   // changes (a different agent may have a different sub on the same
   // device, though in practice we unsubscribe on logout).
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     void (async () => {
-      const state = await getPushSubscriptionState()
-      if (cancelled) return
-      setSupported(state.supported)
-      setPermission(state.permission)
-      setSubscribed(state.subscribed)
-    })()
+      const state = await getPushSubscriptionState();
+      if (cancelled) return;
+      setSupported(state.supported);
+      setPermission(state.permission);
+      setSubscribed(state.subscribed);
+    })();
     return () => {
-      cancelled = true
-    }
-  }, [token])
+      cancelled = true;
+    };
+  }, [token]);
 
   const subscribe = useCallback(async () => {
     if (!token) {
-      setError('Not signed in')
-      return
+      setError("Not signed in");
+      return;
     }
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     try {
-      await registerPushAndSubscribe(token)
-      const next = await getPushSubscriptionState()
-      setPermission(next.permission)
-      setSubscribed(next.subscribed)
+      await registerPushAndSubscribe(token);
+      const next = await getPushSubscriptionState();
+      setPermission(next.permission);
+      setSubscribed(next.subscribed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to enable notifications')
+      setError(
+        err instanceof Error ? err.message : "Failed to enable notifications",
+      );
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [token])
+  }, [token]);
 
   const unsubscribe = useCallback(async () => {
-    if (!token) return
-    setLoading(true)
-    setError(null)
+    if (!token) return;
+    setLoading(true);
+    setError(null);
     try {
-      await unsubscribePush(token)
-      const next = await getPushSubscriptionState()
-      setSubscribed(next.subscribed)
+      await unsubscribePush(token);
+      const next = await getPushSubscriptionState();
+      setSubscribed(next.subscribed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disable notifications')
+      setError(
+        err instanceof Error ? err.message : "Failed to disable notifications",
+      );
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [token])
+  }, [token]);
 
   return {
     supported,
@@ -100,5 +105,5 @@ export function usePushNotifications(): UsePushNotificationsResult {
     error,
     subscribe,
     unsubscribe,
-  }
+  };
 }

@@ -1,6 +1,6 @@
-import { eq, sql } from 'drizzle-orm'
-import { knowledgeChunks, withTenant } from '@sahay/db'
-import { inngest } from '../client'
+import { eq, sql } from "drizzle-orm";
+import { knowledgeChunks, withTenant } from "@sahay/db";
+import { inngest } from "../client";
 
 /**
  * shopify-products (created / updated / deleted)
@@ -19,29 +19,34 @@ import { inngest } from '../client'
  */
 
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  return html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function upsertProductChunk(
   tenantId: string,
   raw: Record<string, unknown>,
 ): Promise<string | null> {
-  const sourceId = String(raw['id'] ?? '')
-  if (!sourceId) return null
-  const title = (raw['title'] as string | null) ?? null
-  const bodyHtml = (raw['body_html'] as string | null) ?? null
-  const productType = (raw['product_type'] as string | null) ?? null
-  const updatedAt = raw['updated_at'] ? new Date(String(raw['updated_at'])) : null
+  const sourceId = String(raw["id"] ?? "");
+  if (!sourceId) return null;
+  const title = (raw["title"] as string | null) ?? null;
+  const bodyHtml = (raw["body_html"] as string | null) ?? null;
+  const productType = (raw["product_type"] as string | null) ?? null;
+  const updatedAt = raw["updated_at"]
+    ? new Date(String(raw["updated_at"]))
+    : null;
 
-  const content = stripHtml(bodyHtml ?? '') || (title ?? '')
-  if (!content.trim()) return null
+  const content = stripHtml(bodyHtml ?? "") || (title ?? "");
+  if (!content.trim()) return null;
 
   return withTenant(tenantId, async (tx) => {
     const existing = await tx.query.knowledgeChunks.findFirst({
       where: sql`${knowledgeChunks.tenantId} = ${tenantId}
         AND ${knowledgeChunks.sourceType} = 'product'
         AND ${knowledgeChunks.sourceId} = ${sourceId}`,
-    })
+    });
 
     if (existing) {
       await tx
@@ -55,15 +60,15 @@ async function upsertProductChunk(
           lastUpdated: new Date(),
           isActive: true,
         })
-        .where(eq(knowledgeChunks.id, existing.id))
-      return existing.id
+        .where(eq(knowledgeChunks.id, existing.id));
+      return existing.id;
     }
 
     const [created] = await tx
       .insert(knowledgeChunks)
       .values({
         tenantId,
-        sourceType: 'product',
+        sourceType: "product",
         sourceId,
         title,
         content,
@@ -72,18 +77,18 @@ async function upsertProductChunk(
         category: productType,
         shopifyUpdatedAt: updatedAt,
       })
-      .returning({ id: knowledgeChunks.id })
+      .returning({ id: knowledgeChunks.id });
 
-    return created?.id ?? null
-  })
+    return created?.id ?? null;
+  });
 }
 
 async function deactivateProductChunks(
   tenantId: string,
   raw: Record<string, unknown>,
 ): Promise<void> {
-  const sourceId = String(raw['id'] ?? '')
-  if (!sourceId) return
+  const sourceId = String(raw["id"] ?? "");
+  if (!sourceId) return;
   await withTenant(tenantId, (tx) =>
     tx
       .update(knowledgeChunks)
@@ -93,63 +98,65 @@ async function deactivateProductChunks(
           AND ${knowledgeChunks.sourceType} = 'product'
           AND ${knowledgeChunks.sourceId} = ${sourceId}`,
       ),
-  )
+  );
 }
 
 export const shopifyProductsCreated = inngest.createFunction(
   {
-    id: 'shopify-products-created',
+    id: "shopify-products-created",
     retries: 5,
-    concurrency: { limit: 25, key: 'event.data.tenantId' },
+    concurrency: { limit: 25, key: "event.data.tenantId" },
   },
-  { event: 'shopify/products.created' },
+  { event: "shopify/products.created" },
   async ({ event, step }) => {
-    const { tenantId, payload } = event.data
-    const chunkId = await step.run('upsert', async () =>
+    const { tenantId, payload } = event.data;
+    const chunkId = await step.run("upsert", async () =>
       upsertProductChunk(tenantId, payload),
-    )
+    );
     if (chunkId) {
-      await step.sendEvent('queue-embed', {
-        name: 'ai/embed.requested',
+      await step.sendEvent("queue-embed", {
+        name: "ai/embed.requested",
         data: { tenantId, kbChunkId: chunkId },
-      })
+      });
     }
-    return { chunkId }
+    return { chunkId };
   },
-)
+);
 
 export const shopifyProductsUpdated = inngest.createFunction(
   {
-    id: 'shopify-products-updated',
+    id: "shopify-products-updated",
     retries: 5,
-    concurrency: { limit: 25, key: 'event.data.tenantId' },
+    concurrency: { limit: 25, key: "event.data.tenantId" },
   },
-  { event: 'shopify/products.updated' },
+  { event: "shopify/products.updated" },
   async ({ event, step }) => {
-    const { tenantId, payload } = event.data
-    const chunkId = await step.run('upsert', async () =>
+    const { tenantId, payload } = event.data;
+    const chunkId = await step.run("upsert", async () =>
       upsertProductChunk(tenantId, payload),
-    )
+    );
     if (chunkId) {
-      await step.sendEvent('queue-embed', {
-        name: 'ai/embed.requested',
+      await step.sendEvent("queue-embed", {
+        name: "ai/embed.requested",
         data: { tenantId, kbChunkId: chunkId },
-      })
+      });
     }
-    return { chunkId }
+    return { chunkId };
   },
-)
+);
 
 export const shopifyProductsDeleted = inngest.createFunction(
   {
-    id: 'shopify-products-deleted',
+    id: "shopify-products-deleted",
     retries: 5,
-    concurrency: { limit: 25, key: 'event.data.tenantId' },
+    concurrency: { limit: 25, key: "event.data.tenantId" },
   },
-  { event: 'shopify/products.deleted' },
+  { event: "shopify/products.deleted" },
   async ({ event, step }) => {
-    const { tenantId, payload } = event.data
-    await step.run('deactivate', async () => deactivateProductChunks(tenantId, payload))
-    return { ok: true }
+    const { tenantId, payload } = event.data;
+    await step.run("deactivate", async () =>
+      deactivateProductChunks(tenantId, payload),
+    );
+    return { ok: true };
   },
-)
+);

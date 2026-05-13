@@ -17,7 +17,7 @@ export {
   type SendEscalationAlertArgs,
   type SendOnboardingWelcomeArgs,
   type SendPasswordResetArgs,
-} from './resend'
+} from "./resend";
 
 export {
   agentInviteTemplate,
@@ -28,7 +28,7 @@ export {
   type EscalationAlertArgs,
   type OnboardingWelcomeArgs,
   type PasswordResetArgs,
-} from './templates'
+} from "./templates";
 
 export type {
   CapturedEmail,
@@ -37,4 +37,4 @@ export type {
   EmailResult,
   RenderedEmail,
   SendEmailOptions,
-} from './types'
+} from "./types";

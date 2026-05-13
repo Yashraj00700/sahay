@@ -10,18 +10,18 @@ Three tables (migration `0003_experiments.sql`):
 
 ### `experiments`
 
-| Column        | Type                | Notes                                       |
-| ------------- | ------------------- | ------------------------------------------- |
-| `id`          | uuid pk             | `gen_random_uuid()`                         |
-| `tenant_id`   | uuid (nullable)     | FK → `tenants` ON DELETE CASCADE; `null` = global |
-| `key`         | text NOT NULL       | e.g. `system_prompt`                         |
-| `description` | text                | optional human-readable note                |
-| `variants`    | jsonb NOT NULL      | `[{ name, weight, config }, ...]`            |
-| `is_active`   | boolean DEFAULT true|                                             |
-| `starts_at`   | timestamptz         | DEFAULT now()                               |
-| `ends_at`     | timestamptz         | nullable                                    |
-| `created_at`  | timestamptz         |                                             |
-| `updated_at`  | timestamptz         |                                             |
+| Column        | Type                 | Notes                                             |
+| ------------- | -------------------- | ------------------------------------------------- |
+| `id`          | uuid pk              | `gen_random_uuid()`                               |
+| `tenant_id`   | uuid (nullable)      | FK → `tenants` ON DELETE CASCADE; `null` = global |
+| `key`         | text NOT NULL        | e.g. `system_prompt`                              |
+| `description` | text                 | optional human-readable note                      |
+| `variants`    | jsonb NOT NULL       | `[{ name, weight, config }, ...]`                 |
+| `is_active`   | boolean DEFAULT true |                                                   |
+| `starts_at`   | timestamptz          | DEFAULT now()                                     |
+| `ends_at`     | timestamptz          | nullable                                          |
+| `created_at`  | timestamptz          |                                                   |
+| `updated_at`  | timestamptz          |                                                   |
 
 Indexes: `(tenant_id, key, is_active)` and `(key, is_active)`.
 
@@ -30,15 +30,15 @@ Indexes: `(tenant_id, key, is_active)` and `(key, is_active)`.
 Sticky per subject. The same `(experiment_id, subject_type, subject_id)` is
 guaranteed to map to one variant for the lifetime of the experiment.
 
-| Column         | Type             | Notes                                       |
-| -------------- | ---------------- | ------------------------------------------- |
-| `id`           | uuid pk          |                                             |
-| `experiment_id`| uuid NOT NULL    | FK → `experiments` ON DELETE CASCADE        |
-| `tenant_id`    | uuid             | denormalised for filtering                  |
-| `subject_type` | text NOT NULL    | `conversation` \| `customer` \| `tenant`    |
-| `subject_id`   | uuid NOT NULL    |                                             |
-| `variant`      | text NOT NULL    | the chosen variant name                     |
-| `assigned_at`  | timestamptz      | DEFAULT now()                               |
+| Column          | Type          | Notes                                    |
+| --------------- | ------------- | ---------------------------------------- |
+| `id`            | uuid pk       |                                          |
+| `experiment_id` | uuid NOT NULL | FK → `experiments` ON DELETE CASCADE     |
+| `tenant_id`     | uuid          | denormalised for filtering               |
+| `subject_type`  | text NOT NULL | `conversation` \| `customer` \| `tenant` |
+| `subject_id`    | uuid NOT NULL |                                          |
+| `variant`       | text NOT NULL | the chosen variant name                  |
+| `assigned_at`   | timestamptz   | DEFAULT now()                            |
 
 Unique index on `(experiment_id, subject_type, subject_id)` — also serves as
 the `ON CONFLICT` target so concurrent inserts can't double-assign.
@@ -47,13 +47,13 @@ the `ON CONFLICT` target so concurrent inserts can't double-assign.
 
 Append-only.
 
-| Column         | Type              | Notes                                |
-| -------------- | ----------------- | ------------------------------------ |
-| `id`           | uuid pk           |                                      |
-| `assignment_id`| uuid NOT NULL     | FK → `experiment_assignments`        |
-| `metric`       | text NOT NULL     | `csat` \| `resolved` \| `escalated` \| `turn_count` |
-| `value`        | numeric(10,4)     | for booleans, store 0 / 1            |
-| `recorded_at`  | timestamptz       | DEFAULT now()                        |
+| Column          | Type          | Notes                                               |
+| --------------- | ------------- | --------------------------------------------------- |
+| `id`            | uuid pk       |                                                     |
+| `assignment_id` | uuid NOT NULL | FK → `experiment_assignments`                       |
+| `metric`        | text NOT NULL | `csat` \| `resolved` \| `escalated` \| `turn_count` |
+| `value`         | numeric(10,4) | for booleans, store 0 / 1                           |
+| `recorded_at`   | timestamptz   | DEFAULT now()                                       |
 
 ## Setting up an experiment
 
@@ -107,10 +107,27 @@ Response:
 
 ```json
 {
-  "experiment": { "id": "...", "key": "system_prompt", "tenantId": "...", "isActive": true },
+  "experiment": {
+    "id": "...",
+    "key": "system_prompt",
+    "tenantId": "...",
+    "isActive": true
+  },
   "results": [
-    { "variant": "control",  "n": 142, "csatMean": 4.31, "escalatedRate": 0.18, "turnCountMean": 3.4 },
-    { "variant": "concise",  "n": 138, "csatMean": 4.42, "escalatedRate": 0.16, "turnCountMean": 2.9 }
+    {
+      "variant": "control",
+      "n": 142,
+      "csatMean": 4.31,
+      "escalatedRate": 0.18,
+      "turnCountMean": 3.4
+    },
+    {
+      "variant": "concise",
+      "n": 138,
+      "csatMean": 4.42,
+      "escalatedRate": 0.16,
+      "turnCountMean": 2.9
+    }
   ]
 }
 ```

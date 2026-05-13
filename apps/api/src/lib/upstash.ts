@@ -6,10 +6,10 @@
 // library can manage its prefix conventions independently. Application code
 // that needs raw GET/SET/DEL operations should import `upstash` from here.
 
-import { Redis } from '@upstash/redis'
-import { env } from './env'
+import { Redis } from "@upstash/redis";
+import { env } from "./env";
 
 export const upstash = new Redis({
   url: env.UPSTASH_REDIS_REST_URL,
   token: env.UPSTASH_REDIS_REST_TOKEN,
-})
+});

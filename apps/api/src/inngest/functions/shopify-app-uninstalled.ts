@@ -1,7 +1,7 @@
-import { eq } from 'drizzle-orm'
-import { tenants, withTenant } from '@sahay/db'
-import { inngest } from '../client'
-import { auditAction } from '../../services/audit'
+import { eq } from "drizzle-orm";
+import { tenants, withTenant } from "@sahay/db";
+import { inngest } from "../client";
+import { auditAction } from "../../services/audit";
 
 /**
  * shopify-app-uninstalled
@@ -15,39 +15,39 @@ import { auditAction } from '../../services/audit'
  */
 export const shopifyAppUninstalled = inngest.createFunction(
   {
-    id: 'shopify-app-uninstalled',
+    id: "shopify-app-uninstalled",
     retries: 3,
   },
-  { event: 'shopify/app.uninstalled' },
+  { event: "shopify/app.uninstalled" },
   async ({ event, step }) => {
-    const { tenantId, shop } = event.data
+    const { tenantId, shop } = event.data;
 
-    await step.run('mark-uninstalled', async () => {
+    await step.run("mark-uninstalled", async () => {
       await withTenant(tenantId, (tx) =>
         tx
           .update(tenants)
           .set({
             isActive: false,
-            shopifyAccessToken: '',
+            shopifyAccessToken: "",
             whatsappToken: null,
             instagramToken: null,
             updatedAt: new Date(),
           })
           .where(eq(tenants.id, tenantId)),
-      )
-    })
+      );
+    });
 
-    await step.run('audit', async () => {
+    await step.run("audit", async () => {
       await auditAction({
         tenantId,
-        actorType: 'system',
-        action: 'shopify.app_uninstalled',
-        resourceType: 'tenant',
+        actorType: "system",
+        action: "shopify.app_uninstalled",
+        resourceType: "tenant",
         resourceId: tenantId,
         metadata: { shop },
-      })
-    })
+      });
+    });
 
-    return { ok: true }
+    return { ok: true };
   },
-)
+);

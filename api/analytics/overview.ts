@@ -1,9 +1,12 @@
-import { z } from 'zod'
-import { sql } from 'drizzle-orm'
-import { defineAuthedHandler, parseQuery } from '../../apps/api/src/lib/handler'
-import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
-import { auditRead } from '../../apps/api/src/services/audit'
-import type { AnalyticsOverview, Channel } from '@sahay/shared'
+import { z } from "zod";
+import { sql } from "drizzle-orm";
+import {
+  defineAuthedHandler,
+  parseQuery,
+} from "../../apps/api/src/lib/handler";
+import { enforce, limits } from "../../apps/api/src/lib/rate-limit";
+import { auditRead } from "../../apps/api/src/services/audit";
+import type { AnalyticsOverview, Channel } from "@sahay/shared";
 
 /**
  * GET /api/analytics/overview
@@ -21,70 +24,73 @@ import type { AnalyticsOverview, Channel } from '@sahay/shared'
 
 const querySchema = z
   .object({
-    period: z.enum(['1d', '7d', '30d']).default('30d'),
+    period: z.enum(["1d", "7d", "30d"]).default("30d"),
     dateFrom: z.string().datetime().optional(),
     dateTo: z.string().datetime().optional(),
   })
   .refine(
     (q) =>
       !q.dateFrom || !q.dateTo || new Date(q.dateFrom) <= new Date(q.dateTo),
-    { message: 'dateFrom must be <= dateTo' },
-  )
+    { message: "dateFrom must be <= dateTo" },
+  );
 
 const CHANNELS: ReadonlyArray<Channel> = [
-  'whatsapp',
-  'instagram',
-  'webchat',
-  'email',
-]
+  "whatsapp",
+  "instagram",
+  "webchat",
+  "email",
+];
 
-function resolveRange(q: z.infer<typeof querySchema>): { from: Date; to: Date } {
+function resolveRange(q: z.infer<typeof querySchema>): {
+  from: Date;
+  to: Date;
+} {
   if (q.dateFrom && q.dateTo) {
-    return { from: new Date(q.dateFrom), to: new Date(q.dateTo) }
+    return { from: new Date(q.dateFrom), to: new Date(q.dateTo) };
   }
-  const days = q.period === '1d' ? 1 : q.period === '7d' ? 7 : 30
-  const to = new Date()
-  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000)
-  return { from, to }
+  const days = q.period === "1d" ? 1 : q.period === "7d" ? 7 : 30;
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+  return { from, to };
 }
 
 interface AggRow {
-  total_conversations: number
-  new_conversations: number
-  resolved_conversations: number
-  ai_resolved: number
-  avg_first_response_seconds: number | null
-  avg_resolution_seconds: number | null
-  avg_csat: number | null
-  csat_responses: number
-  cod_conversions: number
-  cod_conversion_revenue: number | null
-  total_messages: number
+  total_conversations: number;
+  new_conversations: number;
+  resolved_conversations: number;
+  ai_resolved: number;
+  avg_first_response_seconds: number | null;
+  avg_resolution_seconds: number | null;
+  avg_csat: number | null;
+  csat_responses: number;
+  cod_conversions: number;
+  cod_conversion_revenue: number | null;
+  total_messages: number;
 }
 
 interface ChannelRow {
-  channel: string
-  count: number
+  channel: string;
+  count: number;
 }
 
 interface IntentRow {
-  primary_intent: string | null
-  count: number
+  primary_intent: string | null;
+  count: number;
 }
 
 export default defineAuthedHandler(
   async (req, res, ctx) => {
-    await enforce(limits.perTenant(), ctx.tenant.id)
+    await enforce(limits.perTenant(), ctx.tenant.id);
 
-    const q = parseQuery(querySchema, req.query)
-    const { from, to } = resolveRange(q)
-    const period = q.period
-    const tenantId = ctx.tenant.id
+    const q = parseQuery(querySchema, req.query);
+    const { from, to } = resolveRange(q);
+    const period = q.period;
+    const tenantId = ctx.tenant.id;
 
     // Previous period of equal length for trend deltas.
-    const lengthMs = to.getTime() - from.getTime()
-    const prevTo = from
-    const prevFrom = new Date(from.getTime() - lengthMs)
+    const lengthMs = to.getTime() - from.getTime();
+    const prevTo = from;
+    const prevFrom = new Date(from.getTime() - lengthMs);
 
     const result = await ctx.withTenant(async (tx) => {
       // ── Current-window aggregates (single row) ──────────────────────
@@ -120,7 +126,7 @@ export default defineAuthedHandler(
         WHERE tenant_id = ${tenantId}
           AND created_at >= ${from}
           AND created_at <= ${to}
-      `)) as unknown as AggRow[]
+      `)) as unknown as AggRow[];
 
       const agg: AggRow = aggRows[0] ?? {
         total_conversations: 0,
@@ -134,7 +140,7 @@ export default defineAuthedHandler(
         cod_conversions: 0,
         cod_conversion_revenue: null,
         total_messages: 0,
-      }
+      };
 
       // ── Total messages sent (agent + AI) in the window ──────────────
       const msgRows = (await tx.execute(sql`
@@ -144,8 +150,8 @@ export default defineAuthedHandler(
           AND created_at >= ${from}
           AND created_at <= ${to}
           AND sender_type IN ('agent', 'ai')
-      `)) as unknown as Array<{ total_messages: number }>
-      const totalMessages = msgRows[0]?.total_messages ?? 0
+      `)) as unknown as Array<{ total_messages: number }>;
+      const totalMessages = msgRows[0]?.total_messages ?? 0;
 
       // ── Per-channel breakdown ───────────────────────────────────────
       const channelRows = (await tx.execute(sql`
@@ -155,7 +161,7 @@ export default defineAuthedHandler(
           AND created_at >= ${from}
           AND created_at <= ${to}
         GROUP BY channel
-      `)) as unknown as ChannelRow[]
+      `)) as unknown as ChannelRow[];
 
       // ── Top intent (mode) ───────────────────────────────────────────
       const intentRows = (await tx.execute(sql`
@@ -168,7 +174,7 @@ export default defineAuthedHandler(
         GROUP BY primary_intent
         ORDER BY count DESC
         LIMIT 1
-      `)) as unknown as IntentRow[]
+      `)) as unknown as IntentRow[];
 
       // ── Previous-period totals for deltas (cheap; only what we need) ─
       const prevRows = (await tx.execute(sql`
@@ -184,41 +190,41 @@ export default defineAuthedHandler(
           AND created_at >= ${prevFrom}
           AND created_at < ${prevTo}
       `)) as unknown as Array<{
-        total_conversations: number
-        ai_resolved: number
-        avg_csat: number | null
-      }>
+        total_conversations: number;
+        ai_resolved: number;
+        avg_csat: number | null;
+      }>;
       const prev = prevRows[0] ?? {
         total_conversations: 0,
         ai_resolved: 0,
         avg_csat: null,
-      }
+      };
 
-      return { agg, totalMessages, channelRows, intentRows, prev }
-    })
+      return { agg, totalMessages, channelRows, intentRows, prev };
+    });
 
-    const { agg, totalMessages, channelRows, intentRows, prev } = result
+    const { agg, totalMessages, channelRows, intentRows, prev } = result;
 
     const channelBreakdown: Record<Channel, number> = {
       whatsapp: 0,
       instagram: 0,
       webchat: 0,
       email: 0,
-    }
+    };
     for (const row of channelRows) {
       if ((CHANNELS as ReadonlyArray<string>).includes(row.channel)) {
-        channelBreakdown[row.channel as Channel] = Number(row.count) || 0
+        channelBreakdown[row.channel as Channel] = Number(row.count) || 0;
       }
     }
 
-    const totalConversations = Number(agg.total_conversations) || 0
-    const resolved = Number(agg.resolved_conversations) || 0
-    const aiResolved = Number(agg.ai_resolved) || 0
+    const totalConversations = Number(agg.total_conversations) || 0;
+    const resolved = Number(agg.resolved_conversations) || 0;
+    const aiResolved = Number(agg.ai_resolved) || 0;
 
     const aiResolutionRate =
-      totalConversations > 0 ? (aiResolved / totalConversations) * 100 : 0
+      totalConversations > 0 ? (aiResolved / totalConversations) * 100 : 0;
     const resolvedRate =
-      totalConversations > 0 ? (resolved / totalConversations) * 100 : 0
+      totalConversations > 0 ? (resolved / totalConversations) * 100 : 0;
 
     // Trend deltas (% change vs previous period)
     const conversationsDelta =
@@ -226,16 +232,16 @@ export default defineAuthedHandler(
         ? ((totalConversations - prev.total_conversations) /
             prev.total_conversations) *
           100
-        : 0
+        : 0;
     const prevAiRate =
       prev.total_conversations > 0
         ? (prev.ai_resolved / prev.total_conversations) * 100
-        : 0
-    const aiResolutionDelta = aiResolutionRate - prevAiRate
+        : 0;
+    const aiResolutionDelta = aiResolutionRate - prevAiRate;
     const csatDelta =
       prev.avg_csat !== null && agg.avg_csat !== null
         ? Number(agg.avg_csat) - Number(prev.avg_csat)
-        : null
+        : null;
 
     const overview: AnalyticsOverview = {
       period,
@@ -248,9 +254,7 @@ export default defineAuthedHandler(
       avgFirstResponseSeconds: Math.round(
         Number(agg.avg_first_response_seconds) || 0,
       ),
-      avgResolutionSeconds: Math.round(
-        Number(agg.avg_resolution_seconds) || 0,
-      ),
+      avgResolutionSeconds: Math.round(Number(agg.avg_resolution_seconds) || 0),
       avgCsat:
         agg.avg_csat !== null && agg.avg_csat !== undefined
           ? Math.round(Number(agg.avg_csat) * 10) / 10
@@ -259,9 +263,7 @@ export default defineAuthedHandler(
       totalMessages,
       topIntent: intentRows[0]?.primary_intent ?? null,
       codConversions: Number(agg.cod_conversions) || 0,
-      codConversionRevenue: Math.round(
-        Number(agg.cod_conversion_revenue) || 0,
-      ),
+      codConversionRevenue: Math.round(Number(agg.cod_conversion_revenue) || 0),
       channelBreakdown,
       trends: {
         conversationsDelta: Math.round(conversationsDelta * 10) / 10,
@@ -269,20 +271,20 @@ export default defineAuthedHandler(
         csatDelta:
           csatDelta !== null ? Math.round(csatDelta * 100) / 100 : null,
       },
-    }
+    };
 
     void auditRead({
       tenantId,
       actorId: ctx.agent.id,
       actorEmail: ctx.agent.email,
-      resourceType: 'analytics_overview',
+      resourceType: "analytics_overview",
       query: { period, hasDateRange: !!(q.dateFrom && q.dateTo) },
       ipAddress: ctx.ip,
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
-    })
+    });
 
-    res.status(200).json(overview)
+    res.status(200).json(overview);
   },
-  { methods: ['GET'] },
-)
+  { methods: ["GET"] },
+);

@@ -10,54 +10,63 @@
 // Instead, every endpoint is registered explicitly in `./routes.ts`. The
 // tradeoff (manual mirroring) is documented there.
 
-import { OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi'
-import { registry } from './registry'
+import { OpenApiGeneratorV31 } from "@asteasolutions/zod-to-openapi";
+import { registry } from "./registry";
 
 // Side-effect import: triggers all `registerRoute(...)` calls. Must come after
 // the registry import so the singleton is initialised first.
-import './routes'
+import "./routes";
 
-type ServerConfig = { url: string; description?: string }
+type ServerConfig = { url: string; description?: string };
 
 export interface BuildSpecOptions {
   /** Override the default servers list — useful for previews. */
-  servers?: ReadonlyArray<ServerConfig>
+  servers?: ReadonlyArray<ServerConfig>;
 }
 
-export function buildSpec(options: BuildSpecOptions = {}): ReturnType<
-  OpenApiGeneratorV31['generateDocument']
-> {
-  const generator = new OpenApiGeneratorV31(registry.definitions)
+export function buildSpec(
+  options: BuildSpecOptions = {},
+): ReturnType<OpenApiGeneratorV31["generateDocument"]> {
+  const generator = new OpenApiGeneratorV31(registry.definitions);
 
   return generator.generateDocument({
-    openapi: '3.1.0',
+    openapi: "3.1.0",
     info: {
-      title: 'Sahay API',
-      version: '0.1.0',
+      title: "Sahay API",
+      version: "0.1.0",
       description:
-        'AI-powered customer-support platform for Indian D2C brands. Authentication is via JWT bearer tokens issued by `POST /api/auth/login`. Webhooks are HMAC-signed by external providers (Meta, Shopify) and are not intended for human callers.',
-      contact: { name: 'Sahay Engineering', url: 'https://sahay.dev' },
-      license: { name: 'Proprietary' },
+        "AI-powered customer-support platform for Indian D2C brands. Authentication is via JWT bearer tokens issued by `POST /api/auth/login`. Webhooks are HMAC-signed by external providers (Meta, Shopify) and are not intended for human callers.",
+      contact: { name: "Sahay Engineering", url: "https://sahay.dev" },
+      license: { name: "Proprietary" },
     },
     servers: options.servers
       ? [...options.servers]
       : [
-          { url: 'https://api.sahay.dev', description: 'Production' },
-          { url: 'https://staging.api.sahay.dev', description: 'Staging' },
-          { url: 'http://localhost:3000', description: 'Local dev' },
+          { url: "https://api.sahay.dev", description: "Production" },
+          { url: "https://staging.api.sahay.dev", description: "Staging" },
+          { url: "http://localhost:3000", description: "Local dev" },
         ],
     tags: [
-      { name: 'system', description: 'Health, readiness, and Inngest plumbing.' },
-      { name: 'auth', description: 'Login, refresh, password reset.' },
-      { name: 'conversations', description: 'Inbox, messages, assignments, lifecycle.' },
-      { name: 'customers', description: 'Customer directory.' },
-      { name: 'ai', description: 'AI suggestions and assist endpoints.' },
-      { name: 'kb', description: 'Knowledge base articles.' },
-      { name: 'analytics', description: 'Tenant-scoped reporting.' },
-      { name: 'settings', description: 'Tenant configuration.' },
-      { name: 'realtime', description: 'Pusher channel authorization.' },
-      { name: 'shopify', description: 'Shopify OAuth install/callback.' },
-      { name: 'webhooks', description: 'External provider event ingest (Meta, Shopify).' },
+      {
+        name: "system",
+        description: "Health, readiness, and Inngest plumbing.",
+      },
+      { name: "auth", description: "Login, refresh, password reset." },
+      {
+        name: "conversations",
+        description: "Inbox, messages, assignments, lifecycle.",
+      },
+      { name: "customers", description: "Customer directory." },
+      { name: "ai", description: "AI suggestions and assist endpoints." },
+      { name: "kb", description: "Knowledge base articles." },
+      { name: "analytics", description: "Tenant-scoped reporting." },
+      { name: "settings", description: "Tenant configuration." },
+      { name: "realtime", description: "Pusher channel authorization." },
+      { name: "shopify", description: "Shopify OAuth install/callback." },
+      {
+        name: "webhooks",
+        description: "External provider event ingest (Meta, Shopify).",
+      },
     ],
-  })
+  });
 }

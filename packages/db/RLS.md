@@ -43,19 +43,19 @@ Use for **all** tenant-scoped DB access. Opens a transaction, sets
 `app.tenant_id`, then runs your callback with a transaction handle.
 
 ```ts
-import { withTenant } from '@sahay/db'
+import { withTenant } from "@sahay/db";
 
 const conversations = await withTenant(ctx.tenant.id, (tx) =>
-  tx.query.conversations.findMany({ where: eq(conversations.status, 'open') })
-)
+  tx.query.conversations.findMany({ where: eq(conversations.status, "open") }),
+);
 ```
 
 In an authed HTTP handler, prefer the pre-bound helper on the context:
 
 ```ts
 const conversations = await ctx.withTenant((tx) =>
-  tx.query.conversations.findMany({ where: eq(conversations.status, 'open') })
-)
+  tx.query.conversations.findMany({ where: eq(conversations.status, "open") }),
+);
 ```
 
 ### `withSystemBypass(fn)`

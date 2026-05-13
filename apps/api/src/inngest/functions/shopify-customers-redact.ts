@@ -1,7 +1,7 @@
-import { eq, sql } from 'drizzle-orm'
-import { customers, conversations, messages, withTenant } from '@sahay/db'
-import { inngest } from '../client'
-import { auditAction } from '../../services/audit'
+import { eq, sql } from "drizzle-orm";
+import { customers, conversations, messages, withTenant } from "@sahay/db";
+import { inngest } from "../client";
+import { auditAction } from "../../services/audit";
 
 /**
  * shopify-customers-redact (GDPR / DPDP)
@@ -16,37 +16,37 @@ import { auditAction } from '../../services/audit'
  */
 export const shopifyCustomersRedact = inngest.createFunction(
   {
-    id: 'shopify-customers-redact',
+    id: "shopify-customers-redact",
     retries: 3,
   },
-  { event: 'shopify/customers.redact' },
+  { event: "shopify/customers.redact" },
   async ({ event, step }) => {
-    const { tenantId, shop, payload } = event.data
+    const { tenantId, shop, payload } = event.data;
     const shopifyCustomerId =
-      payload['customer'] && typeof payload['customer'] === 'object'
-        ? String((payload['customer'] as { id?: unknown }).id ?? '')
-        : ''
+      payload["customer"] && typeof payload["customer"] === "object"
+        ? String((payload["customer"] as { id?: unknown }).id ?? "")
+        : "";
 
-    if (!shopifyCustomerId) return { skipped: true, reason: 'no_customer_id' }
+    if (!shopifyCustomerId) return { skipped: true, reason: "no_customer_id" };
 
-    const customer = await step.run('lookup', async () =>
+    const customer = await step.run("lookup", async () =>
       withTenant(tenantId, (tx) =>
         tx.query.customers.findFirst({
           where: sql`${customers.tenantId} = ${tenantId}
             AND ${customers.shopifyCustomerId} = ${BigInt(shopifyCustomerId)}`,
         }),
       ),
-    )
+    );
 
-    if (!customer) return { skipped: true, reason: 'customer_not_found' }
+    if (!customer) return { skipped: true, reason: "customer_not_found" };
 
-    await step.run('delete-cascade', async () =>
+    await step.run("delete-cascade", async () =>
       withTenant(tenantId, async (tx) => {
         const convs = await tx
           .select({ id: conversations.id })
           .from(conversations)
-          .where(eq(conversations.customerId, customer.id))
-        const convIds = convs.map((c) => c.id)
+          .where(eq(conversations.customerId, customer.id));
+        const convIds = convs.map((c) => c.id);
 
         if (convIds.length > 0) {
           await tx.delete(messages).where(
@@ -54,24 +54,26 @@ export const shopifyCustomersRedact = inngest.createFunction(
               convIds.map((id) => sql`${id}`),
               sql`, `,
             )})`,
-          )
-          await tx.delete(conversations).where(eq(conversations.customerId, customer.id))
+          );
+          await tx
+            .delete(conversations)
+            .where(eq(conversations.customerId, customer.id));
         }
-        await tx.delete(customers).where(eq(customers.id, customer.id))
+        await tx.delete(customers).where(eq(customers.id, customer.id));
       }),
-    )
+    );
 
-    await step.run('audit', async () => {
+    await step.run("audit", async () => {
       await auditAction({
         tenantId,
-        actorType: 'system',
-        action: 'gdpr.customer_redacted',
-        resourceType: 'customer',
+        actorType: "system",
+        action: "gdpr.customer_redacted",
+        resourceType: "customer",
         resourceId: customer.id,
         metadata: { shopifyCustomerId, shop },
-      })
-    })
+      });
+    });
 
-    return { ok: true, redactedCustomerId: customer.id }
+    return { ok: true, redactedCustomerId: customer.id };
   },
-)
+);

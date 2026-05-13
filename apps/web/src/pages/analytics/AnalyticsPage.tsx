@@ -1,46 +1,63 @@
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts'
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import {
-  MessageSquare, Bot, Clock, Star, TrendingUp, TrendingDown,
-  RefreshCw, Mail, CheckCircle2,
-} from 'lucide-react'
-import { format } from 'date-fns'
-import { api } from '../../lib/api'
-import { cn } from '../../lib/utils'
+  MessageSquare,
+  Bot,
+  Clock,
+  Star,
+  TrendingUp,
+  TrendingDown,
+  RefreshCw,
+  Mail,
+  CheckCircle2,
+} from "lucide-react";
+import { format } from "date-fns";
+import { api } from "../../lib/api";
+import { cn } from "../../lib/utils";
 import type {
   AgentMetric,
   AnalyticsOverview,
   TimeseriesInterval,
   TimeseriesMetric,
   TimeseriesResponse,
-} from '@sahay/shared'
-import { AgentLeaderboard } from '../../components/analytics/AgentLeaderboard'
+} from "@sahay/shared";
+import { AgentLeaderboard } from "../../components/analytics/AgentLeaderboard";
 
 // ─── Date range presets ─────────────────────────────────────────────────────
 
-type RangePreset = 'today' | '7d' | '30d' | '90d' | 'custom'
+type RangePreset = "today" | "7d" | "30d" | "90d" | "custom";
 
 interface DateRange {
-  preset: RangePreset
-  from: Date
-  to: Date
+  preset: RangePreset;
+  from: Date;
+  to: Date;
 }
 
-const PRESETS: ReadonlyArray<{ key: RangePreset; label: string; days: number }> = [
-  { key: 'today', label: 'Today', days: 1 },
-  { key: '7d', label: '7 days', days: 7 },
-  { key: '30d', label: '30 days', days: 30 },
-  { key: '90d', label: '90 days', days: 90 },
-]
+const PRESETS: ReadonlyArray<{
+  key: RangePreset;
+  label: string;
+  days: number;
+}> = [
+  { key: "today", label: "Today", days: 1 },
+  { key: "7d", label: "7 days", days: 7 },
+  { key: "30d", label: "30 days", days: 30 },
+  { key: "90d", label: "90 days", days: 90 },
+];
 
-function rangeFromPreset(preset: Exclude<RangePreset, 'custom'>): DateRange {
-  const days = PRESETS.find((p) => p.key === preset)?.days ?? 30
-  const to = new Date()
-  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000)
-  return { preset, from, to }
+function rangeFromPreset(preset: Exclude<RangePreset, "custom">): DateRange {
+  const days = PRESETS.find((p) => p.key === preset)?.days ?? 30;
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+  return { preset, from, to };
 }
 
 // ─── Query keys / fetchers ──────────────────────────────────────────────────
@@ -49,14 +66,14 @@ function rangeParams(range: DateRange) {
   return {
     dateFrom: range.from.toISOString(),
     dateTo: range.to.toISOString(),
-  }
+  };
 }
 
 async function fetchOverview(range: DateRange): Promise<AnalyticsOverview> {
-  const r = await api.get<AnalyticsOverview>('/analytics/overview', {
+  const r = await api.get<AnalyticsOverview>("/analytics/overview", {
     params: rangeParams(range),
-  })
-  return r.data
+  });
+  return r.data;
 }
 
 async function fetchTimeseries(
@@ -64,44 +81,44 @@ async function fetchTimeseries(
   metric: TimeseriesMetric,
   interval: TimeseriesInterval,
 ): Promise<TimeseriesResponse> {
-  const r = await api.get<TimeseriesResponse>('/analytics/timeseries', {
+  const r = await api.get<TimeseriesResponse>("/analytics/timeseries", {
     params: { ...rangeParams(range), metric, interval },
-  })
-  return r.data
+  });
+  return r.data;
 }
 
 async function fetchAgents(range: DateRange): Promise<{ data: AgentMetric[] }> {
-  const r = await api.get<{ data: AgentMetric[] }>('/analytics/agents', {
+  const r = await api.get<{ data: AgentMetric[] }>("/analytics/agents", {
     params: rangeParams(range),
-  })
-  return r.data
+  });
+  return r.data;
 }
 
 // ─── KPI Card ───────────────────────────────────────────────────────────────
 
-type KpiFormat = 'number' | 'percent' | 'time' | 'decimal'
+type KpiFormat = "number" | "percent" | "time" | "decimal";
 
 function formatValue(value: number | null, kind: KpiFormat): string {
-  if (value === null) return '—'
-  if (kind === 'percent') return `${value.toFixed(1)}%`
-  if (kind === 'time') {
-    if (value <= 0) return '0s'
+  if (value === null) return "—";
+  if (kind === "percent") return `${value.toFixed(1)}%`;
+  if (kind === "time") {
+    if (value <= 0) return "0s";
     return value >= 60
       ? `${Math.floor(value / 60)}m ${Math.round(value % 60)}s`
-      : `${Math.round(value)}s`
+      : `${Math.round(value)}s`;
   }
-  if (kind === 'decimal') return value.toFixed(1)
-  return value.toLocaleString('en-IN')
+  if (kind === "decimal") return value.toFixed(1);
+  return value.toLocaleString("en-IN");
 }
 
 interface KpiCardProps {
-  icon: React.ElementType
-  label: string
-  value: number | null
-  delta: number | null
-  deltaLabel?: string
-  format?: KpiFormat
-  lowerIsBetter?: boolean
+  icon: React.ElementType;
+  label: string;
+  value: number | null;
+  delta: number | null;
+  deltaLabel?: string;
+  format?: KpiFormat;
+  lowerIsBetter?: boolean;
 }
 
 function KpiCard({
@@ -109,13 +126,13 @@ function KpiCard({
   label,
   value,
   delta,
-  deltaLabel = 'vs prev period',
-  format: kind = 'number',
+  deltaLabel = "vs prev period",
+  format: kind = "number",
   lowerIsBetter = false,
 }: KpiCardProps) {
-  const formatted = formatValue(value, kind)
-  const positive = (delta ?? 0) >= 0
-  const isGood = lowerIsBetter ? !positive : positive
+  const formatted = formatValue(value, kind);
+  const positive = (delta ?? 0) >= 0;
+  const isGood = lowerIsBetter ? !positive : positive;
   return (
     <div className="bg-surface border border-border rounded-xl p-5 flex flex-col gap-3 hover:shadow-sm transition-shadow">
       <div className="flex items-center justify-between">
@@ -126,12 +143,14 @@ function KpiCard({
           <Icon className="w-4 h-4 text-primary" />
         </div>
       </div>
-      <div className="text-3xl font-bold text-text-primary tabular-nums">{formatted}</div>
+      <div className="text-3xl font-bold text-text-primary tabular-nums">
+        {formatted}
+      </div>
       {delta !== null ? (
         <div
           className={cn(
-            'flex items-center gap-1 text-xs font-medium',
-            isGood ? 'text-emerald-600' : 'text-rose-500',
+            "flex items-center gap-1 text-xs font-medium",
+            isGood ? "text-emerald-600" : "text-rose-500",
           )}
         >
           {positive ? (
@@ -140,9 +159,11 @@ function KpiCard({
             <TrendingDown className="w-3 h-3 flex-shrink-0" />
           )}
           <span>
-            {positive ? '+' : ''}
-            {kind === 'decimal' || kind === 'percent' ? delta.toFixed(1) : delta}
-            {kind === 'percent' ? '%' : ''}
+            {positive ? "+" : ""}
+            {kind === "decimal" || kind === "percent"
+              ? delta.toFixed(1)
+              : delta}
+            {kind === "percent" ? "%" : ""}
           </span>
           <span className="text-text-secondary font-normal">{deltaLabel}</span>
         </div>
@@ -150,19 +171,29 @@ function KpiCard({
         <span className="text-xs text-text-secondary">No comparison</span>
       )}
     </div>
-  )
+  );
 }
 
-function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+function SectionHeader({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+}) {
   return (
     <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
       <div>
         <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
-        {subtitle && <p className="text-xs text-text-secondary mt-0.5">{subtitle}</p>}
+        {subtitle && (
+          <p className="text-xs text-text-secondary mt-0.5">{subtitle}</p>
+        )}
       </div>
       {action}
     </div>
-  )
+  );
 }
 
 // ─── Date Range Picker ──────────────────────────────────────────────────────
@@ -171,25 +202,25 @@ function DateRangePicker({
   range,
   onChange,
 }: {
-  range: DateRange
-  onChange: (r: DateRange) => void
+  range: DateRange;
+  onChange: (r: DateRange) => void;
 }) {
-  const [showCustom, setShowCustom] = useState(false)
+  const [showCustom, setShowCustom] = useState(false);
 
   function selectPreset(key: RangePreset) {
-    if (key === 'custom') {
-      setShowCustom(true)
-      return
+    if (key === "custom") {
+      setShowCustom(true);
+      return;
     }
-    setShowCustom(false)
-    onChange(rangeFromPreset(key))
+    setShowCustom(false);
+    onChange(rangeFromPreset(key));
   }
 
   function applyCustom(fromStr: string, toStr: string) {
-    const f = new Date(fromStr)
-    const t = new Date(toStr)
-    if (isNaN(f.getTime()) || isNaN(t.getTime()) || f > t) return
-    onChange({ preset: 'custom', from: f, to: t })
+    const f = new Date(fromStr);
+    const t = new Date(toStr);
+    if (isNaN(f.getTime()) || isNaN(t.getTime()) || f > t) return;
+    onChange({ preset: "custom", from: f, to: t });
   }
 
   return (
@@ -200,71 +231,81 @@ function DateRangePicker({
             key={p.key}
             onClick={() => selectPreset(p.key)}
             className={cn(
-              'px-3 py-1.5 rounded text-xs font-medium transition-colors',
+              "px-3 py-1.5 rounded text-xs font-medium transition-colors",
               range.preset === p.key
-                ? 'bg-primary text-white shadow-sm'
-                : 'text-text-secondary hover:text-text-primary',
+                ? "bg-primary text-white shadow-sm"
+                : "text-text-secondary hover:text-text-primary",
             )}
           >
             {p.label}
           </button>
         ))}
         <button
-          onClick={() => selectPreset('custom')}
+          onClick={() => selectPreset("custom")}
           className={cn(
-            'px-3 py-1.5 rounded text-xs font-medium transition-colors',
-            range.preset === 'custom'
-              ? 'bg-primary text-white shadow-sm'
-              : 'text-text-secondary hover:text-text-primary',
+            "px-3 py-1.5 rounded text-xs font-medium transition-colors",
+            range.preset === "custom"
+              ? "bg-primary text-white shadow-sm"
+              : "text-text-secondary hover:text-text-primary",
           )}
         >
           Custom
         </button>
       </div>
-      {(showCustom || range.preset === 'custom') && (
+      {(showCustom || range.preset === "custom") && (
         <div className="flex items-center gap-1 text-xs">
           <input
             type="date"
-            value={format(range.from, 'yyyy-MM-dd')}
-            onChange={(e) => applyCustom(e.target.value, format(range.to, 'yyyy-MM-dd'))}
+            value={format(range.from, "yyyy-MM-dd")}
+            onChange={(e) =>
+              applyCustom(e.target.value, format(range.to, "yyyy-MM-dd"))
+            }
             className="bg-surface border border-border rounded px-2 py-1 text-text-primary"
           />
           <span className="text-text-secondary">to</span>
           <input
             type="date"
-            value={format(range.to, 'yyyy-MM-dd')}
-            onChange={(e) => applyCustom(format(range.from, 'yyyy-MM-dd'), e.target.value)}
+            value={format(range.to, "yyyy-MM-dd")}
+            onChange={(e) =>
+              applyCustom(format(range.from, "yyyy-MM-dd"), e.target.value)
+            }
             className="bg-surface border border-border rounded px-2 py-1 text-text-primary"
           />
         </div>
       )}
     </div>
-  )
+  );
 }
 
 // ─── Time-series chart ──────────────────────────────────────────────────────
 
-const METRIC_OPTIONS: ReadonlyArray<{ value: TimeseriesMetric; label: string }> = [
-  { value: 'conversations', label: 'Conversations' },
-  { value: 'resolutions', label: 'Resolutions' },
-  { value: 'messages', label: 'Messages' },
-  { value: 'csat', label: 'CSAT' },
-]
+const METRIC_OPTIONS: ReadonlyArray<{
+  value: TimeseriesMetric;
+  label: string;
+}> = [
+  { value: "conversations", label: "Conversations" },
+  { value: "resolutions", label: "Resolutions" },
+  { value: "messages", label: "Messages" },
+  { value: "csat", label: "CSAT" },
+];
 
-const INTERVAL_OPTIONS: ReadonlyArray<{ value: TimeseriesInterval; label: string }> = [
-  { value: 'hour', label: 'Hour' },
-  { value: 'day', label: 'Day' },
-  { value: 'week', label: 'Week' },
-]
+const INTERVAL_OPTIONS: ReadonlyArray<{
+  value: TimeseriesInterval;
+  label: string;
+}> = [
+  { value: "hour", label: "Hour" },
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+];
 
 function TimeseriesChart({ range }: { range: DateRange }) {
-  const [metric, setMetric] = useState<TimeseriesMetric>('conversations')
-  const [interval, setInterval] = useState<TimeseriesInterval>('day')
+  const [metric, setMetric] = useState<TimeseriesMetric>("conversations");
+  const [interval, setInterval] = useState<TimeseriesInterval>("day");
 
   const { data, isLoading } = useQuery<TimeseriesResponse>({
     queryKey: [
-      'analytics',
-      'timeseries',
+      "analytics",
+      "timeseries",
       range.from.toISOString(),
       range.to.toISOString(),
       metric,
@@ -272,15 +313,18 @@ function TimeseriesChart({ range }: { range: DateRange }) {
     ],
     queryFn: () => fetchTimeseries(range, metric, interval),
     staleTime: 60_000,
-  })
+  });
 
   const chartData = useMemo(() => {
-    if (!data) return []
+    if (!data) return [];
     return data.points.map((p) => ({
-      label: format(new Date(p.ts), interval === 'hour' ? 'MMM d HH:mm' : 'MMM d'),
+      label: format(
+        new Date(p.ts),
+        interval === "hour" ? "MMM d HH:mm" : "MMM d",
+      ),
       value: p.value,
-    }))
-  }, [data, interval])
+    }));
+  }, [data, interval]);
 
   return (
     <div className="bg-surface border border-border rounded-xl p-5">
@@ -302,7 +346,9 @@ function TimeseriesChart({ range }: { range: DateRange }) {
             </select>
             <select
               value={interval}
-              onChange={(e) => setInterval(e.target.value as TimeseriesInterval)}
+              onChange={(e) =>
+                setInterval(e.target.value as TimeseriesInterval)
+              }
               className="bg-surface border border-border rounded px-2 py-1 text-xs text-text-primary"
             >
               {INTERVAL_OPTIONS.map((o) => (
@@ -329,25 +375,29 @@ function TimeseriesChart({ range }: { range: DateRange }) {
                 <stop offset="95%" stopColor="#4F46E5" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="var(--color-border)"
+              vertical={false}
+            />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 11, fill: 'var(--color-text-secondary)' }}
+              tick={{ fontSize: 11, fill: "var(--color-text-secondary)" }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
-              tick={{ fontSize: 11, fill: 'var(--color-text-secondary)' }}
+              tick={{ fontSize: 11, fill: "var(--color-text-secondary)" }}
               axisLine={false}
               tickLine={false}
               width={36}
             />
             <Tooltip
               contentStyle={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                fontSize: '12px',
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "8px",
+                fontSize: "12px",
               }}
             />
             <Area
@@ -357,47 +407,47 @@ function TimeseriesChart({ range }: { range: DateRange }) {
               strokeWidth={2}
               fill="url(#tsGrad)"
               dot={false}
-              activeDot={{ r: 4, fill: '#4F46E5' }}
+              activeDot={{ r: 4, fill: "#4F46E5" }}
             />
           </AreaChart>
         </ResponsiveContainer>
       )}
     </div>
-  )
+  );
 }
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export function AnalyticsPage() {
-  const [range, setRange] = useState<DateRange>(() => rangeFromPreset('30d'))
-  const [refreshKey, setRefreshKey] = useState(0)
+  const [range, setRange] = useState<DateRange>(() => rangeFromPreset("30d"));
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const overviewQuery = useQuery<AnalyticsOverview>({
     queryKey: [
-      'analytics',
-      'overview',
+      "analytics",
+      "overview",
       range.from.toISOString(),
       range.to.toISOString(),
       refreshKey,
     ],
     queryFn: () => fetchOverview(range),
     staleTime: 60_000,
-  })
+  });
 
   const agentsQuery = useQuery<{ data: AgentMetric[] }>({
     queryKey: [
-      'analytics',
-      'agents',
+      "analytics",
+      "agents",
       range.from.toISOString(),
       range.to.toISOString(),
       refreshKey,
     ],
     queryFn: () => fetchAgents(range),
     staleTime: 60_000,
-  })
+  });
 
-  const overview = overviewQuery.data
-  const agents = agentsQuery.data?.data ?? []
+  const overview = overviewQuery.data;
+  const agents = agentsQuery.data?.data ?? [];
 
   return (
     <div className="h-full overflow-auto bg-background">
@@ -496,7 +546,9 @@ export function AnalyticsPage() {
                   </div>
                 </div>
                 <div className="text-xl font-semibold text-text-primary capitalize truncate">
-                  {overview?.topIntent ? overview.topIntent.replace(/_/g, ' ') : '—'}
+                  {overview?.topIntent
+                    ? overview.topIntent.replace(/_/g, " ")
+                    : "—"}
                 </div>
                 <span className="text-xs text-text-secondary">
                   Most common primary intent
@@ -512,36 +564,45 @@ export function AnalyticsPage() {
         {/* Per-channel breakdown */}
         {overview && (
           <div className="bg-surface border border-border rounded-xl p-5">
-            <SectionHeader title="By Channel" subtitle="Conversation distribution" />
+            <SectionHeader
+              title="By Channel"
+              subtitle="Conversation distribution"
+            />
             {overview.totalConversations === 0 ? (
-              <div className="text-xs text-text-secondary py-4">No conversations in this range.</div>
+              <div className="text-xs text-text-secondary py-4">
+                No conversations in this range.
+              </div>
             ) : (
               <div className="space-y-3">
-                {(['whatsapp', 'instagram', 'webchat', 'email'] as const).map((ch) => {
-                  const count = overview.channelBreakdown[ch] ?? 0
-                  const pct =
-                    overview.totalConversations > 0
-                      ? Math.round((count / overview.totalConversations) * 100)
-                      : 0
-                  return (
-                    <div key={ch}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm capitalize text-text-primary font-medium">
-                          {ch}
-                        </span>
-                        <span className="text-xs text-text-secondary">
-                          {count.toLocaleString('en-IN')} ({pct}%)
-                        </span>
+                {(["whatsapp", "instagram", "webchat", "email"] as const).map(
+                  (ch) => {
+                    const count = overview.channelBreakdown[ch] ?? 0;
+                    const pct =
+                      overview.totalConversations > 0
+                        ? Math.round(
+                            (count / overview.totalConversations) * 100,
+                          )
+                        : 0;
+                    return (
+                      <div key={ch}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm capitalize text-text-primary font-medium">
+                            {ch}
+                          </span>
+                          <span className="text-xs text-text-secondary">
+                            {count.toLocaleString("en-IN")} ({pct}%)
+                          </span>
+                        </div>
+                        <div className="h-2 bg-border rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="h-2 bg-border rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-primary transition-all duration-500"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
+                    );
+                  },
+                )}
               </div>
             )}
           </div>
@@ -551,5 +612,5 @@ export function AnalyticsPage() {
         <AgentLeaderboard data={agents} isLoading={agentsQuery.isLoading} />
       </div>
     </div>
-  )
+  );
 }

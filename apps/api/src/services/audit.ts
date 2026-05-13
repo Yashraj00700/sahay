@@ -1,19 +1,19 @@
-import { db, auditLogs } from '@sahay/db'
+import { db, auditLogs } from "@sahay/db";
 
 interface AuditActionParams {
-  tenantId?: string
-  actorType: 'agent' | 'system' | 'ai' | 'api'
-  actorId?: string
-  actorEmail?: string
-  action: string
-  resourceType: string
-  resourceId?: string
-  beforeState?: object
-  afterState?: object
-  metadata?: object
-  ipAddress?: string
-  userAgent?: string
-  requestId?: string
+  tenantId?: string;
+  actorType: "agent" | "system" | "ai" | "api";
+  actorId?: string;
+  actorEmail?: string;
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  beforeState?: object;
+  afterState?: object;
+  metadata?: object;
+  ipAddress?: string;
+  userAgent?: string;
+  requestId?: string;
 }
 
 export async function auditAction(params: AuditActionParams): Promise<void> {
@@ -32,10 +32,10 @@ export async function auditAction(params: AuditActionParams): Promise<void> {
       ipAddress: params.ipAddress,
       userAgent: params.userAgent,
       requestId: params.requestId,
-    })
+    });
   } catch (err) {
     // Audit log failures should never crash the main request
-    console.error('Failed to write audit log:', err)
+    console.error("Failed to write audit log:", err);
   }
 }
 
@@ -48,19 +48,19 @@ export async function auditAction(params: AuditActionParams): Promise<void> {
  * (phone, email, name) that was filtered on or returned.
  */
 export interface AuditReadQuery {
-  [key: string]: unknown
+  [key: string]: unknown;
 }
 
 interface AuditReadParams {
-  tenantId: string
-  actorId?: string
-  actorEmail?: string
-  resourceType: string
-  resourceId?: string
-  query?: AuditReadQuery
-  ipAddress?: string
-  userAgent?: string
-  requestId?: string
+  tenantId: string;
+  actorId?: string;
+  actorEmail?: string;
+  resourceType: string;
+  resourceId?: string;
+  query?: AuditReadQuery;
+  ipAddress?: string;
+  userAgent?: string;
+  requestId?: string;
 }
 
 /**
@@ -74,7 +74,7 @@ interface AuditReadParams {
 export async function auditRead(params: AuditReadParams): Promise<void> {
   await auditAction({
     tenantId: params.tenantId,
-    actorType: 'agent',
+    actorType: "agent",
     actorId: params.actorId,
     actorEmail: params.actorEmail,
     action: `data.read.${params.resourceType}`,
@@ -84,5 +84,5 @@ export async function auditRead(params: AuditReadParams): Promise<void> {
     ipAddress: params.ipAddress,
     userAgent: params.userAgent,
     requestId: params.requestId,
-  })
+  });
 }

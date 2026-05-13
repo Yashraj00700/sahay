@@ -1,9 +1,9 @@
-import { z } from 'zod'
-import { agents } from '@sahay/db'
-import { eq } from 'drizzle-orm'
-import { defineAuthedHandler, parseBody } from '../../apps/api/src/lib/handler'
-import { NotFoundError } from '../../apps/api/src/lib/errors'
-import { logger } from '../../apps/api/src/lib/logger'
+import { z } from "zod";
+import { agents } from "@sahay/db";
+import { eq } from "drizzle-orm";
+import { defineAuthedHandler, parseBody } from "../../apps/api/src/lib/handler";
+import { NotFoundError } from "../../apps/api/src/lib/errors";
+import { logger } from "../../apps/api/src/lib/logger";
 
 /**
  * POST /api/notifications/subscribe
@@ -23,29 +23,29 @@ const SubscribeSchema = z.object({
     auth: z.string().min(1),
   }),
   userAgent: z.string().max(512).optional(),
-})
+});
 
 interface StoredSubscription {
-  endpoint: string
-  keys: { p256dh: string; auth: string }
-  userAgent?: string
-  createdAt: string
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  userAgent?: string;
+  createdAt: string;
 }
 
 export default defineAuthedHandler(
   async (req, res, ctx) => {
-    const body = parseBody(SubscribeSchema, req.body)
+    const body = parseBody(SubscribeSchema, req.body);
 
     const next = await ctx.withTenant(async (tx) => {
       const row = await tx.query.agents.findFirst({
         where: eq(agents.id, ctx.agent.id),
-      })
-      if (!row) throw new NotFoundError('Agent not found')
+      });
+      if (!row) throw new NotFoundError("Agent not found");
 
-      const existing = (row.pushSubscriptions ?? []) as StoredSubscription[]
+      const existing = (row.pushSubscriptions ?? []) as StoredSubscription[];
       // Dedupe by endpoint: the same browser will produce a stable endpoint,
       // so a re-subscribe is an in-place replace, never a duplicate fanout.
-      const filtered = existing.filter((s) => s.endpoint !== body.endpoint)
+      const filtered = existing.filter((s) => s.endpoint !== body.endpoint);
       const next: StoredSubscription[] = [
         ...filtered,
         {
@@ -54,22 +54,22 @@ export default defineAuthedHandler(
           userAgent: body.userAgent,
           createdAt: new Date().toISOString(),
         },
-      ]
+      ];
 
       await tx
         .update(agents)
         .set({ pushSubscriptions: next, updatedAt: new Date() })
-        .where(eq(agents.id, ctx.agent.id))
+        .where(eq(agents.id, ctx.agent.id));
 
-      return next
-    })
+      return next;
+    });
 
     logger.info(
       { agentId: ctx.agent.id, total: next.length },
-      'push: subscription registered',
-    )
+      "push: subscription registered",
+    );
 
-    res.status(200).json({ success: true })
+    res.status(200).json({ success: true });
   },
-  { methods: ['POST'] },
-)
+  { methods: ["POST"] },
+);

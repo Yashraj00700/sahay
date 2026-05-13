@@ -13,7 +13,7 @@
  */
 
 interface VapidKeyResponse {
-  publicKey: string | null
+  publicKey: string | null;
 }
 
 /**
@@ -24,43 +24,43 @@ interface VapidKeyResponse {
  * `Uint8Array<ArrayBufferLike>` (the modern lib.dom typing).
  */
 function urlBase64ToArrayBuffer(base64Url: string): ArrayBuffer {
-  const padding = '='.repeat((4 - (base64Url.length % 4)) % 4)
-  const base64 = (base64Url + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(base64)
-  const buffer = new ArrayBuffer(raw.length)
-  const view = new Uint8Array(buffer)
-  for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i)
-  return buffer
+  const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
+  const base64 = (base64Url + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const buffer = new ArrayBuffer(raw.length);
+  const view = new Uint8Array(buffer);
+  for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
+  return buffer;
 }
 
 function pushSupported(): boolean {
   return (
-    typeof window !== 'undefined' &&
-    'serviceWorker' in navigator &&
-    'PushManager' in window &&
-    'Notification' in window
-  )
+    typeof window !== "undefined" &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window
+  );
 }
 
 async function fetchVapidKey(token: string): Promise<string | null> {
-  const res = await fetch('/api/notifications/vapid-key', {
+  const res = await fetch("/api/notifications/vapid-key", {
     headers: { Authorization: `Bearer ${token}` },
-  })
-  if (res.status === 503) return null // push intentionally disabled on server
-  if (!res.ok) throw new Error(`vapid-key: ${res.status}`)
-  const data = (await res.json()) as VapidKeyResponse
-  return data.publicKey
+  });
+  if (res.status === 503) return null; // push intentionally disabled on server
+  if (!res.ok) throw new Error(`vapid-key: ${res.status}`);
+  const data = (await res.json()) as VapidKeyResponse;
+  return data.publicKey;
 }
 
 async function postSubscription(
   token: string,
   sub: PushSubscription,
 ): Promise<void> {
-  const json = sub.toJSON()
-  const res = await fetch('/api/notifications/subscribe', {
-    method: 'POST',
+  const json = sub.toJSON();
+  const res = await fetch("/api/notifications/subscribe", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
@@ -68,22 +68,25 @@ async function postSubscription(
       keys: json.keys,
       userAgent: navigator.userAgent,
     }),
-  })
-  if (!res.ok) throw new Error(`subscribe: ${res.status}`)
+  });
+  if (!res.ok) throw new Error(`subscribe: ${res.status}`);
 }
 
-async function postUnsubscription(token: string, endpoint: string): Promise<void> {
+async function postUnsubscription(
+  token: string,
+  endpoint: string,
+): Promise<void> {
   // We use keepalive so this still completes if invoked during page-unload
   // (e.g. tab close immediately after logout).
-  await fetch('/api/notifications/unsubscribe', {
-    method: 'POST',
+  await fetch("/api/notifications/unsubscribe", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ endpoint }),
     keepalive: true,
-  })
+  });
 }
 
 /**
@@ -98,35 +101,36 @@ async function postUnsubscription(token: string, endpoint: string): Promise<void
  * endpoint without notifying us).
  */
 export async function registerPushAndSubscribe(token: string): Promise<void> {
-  if (!pushSupported()) throw new Error('Push notifications not supported')
+  if (!pushSupported()) throw new Error("Push notifications not supported");
 
   // Browser-imposed: must be granted in response to a user gesture.
-  if (Notification.permission === 'denied') {
-    throw new Error('Notifications permission denied')
+  if (Notification.permission === "denied") {
+    throw new Error("Notifications permission denied");
   }
-  if (Notification.permission === 'default') {
-    const result = await Notification.requestPermission()
-    if (result !== 'granted') throw new Error('Notifications permission not granted')
+  if (Notification.permission === "default") {
+    const result = await Notification.requestPermission();
+    if (result !== "granted")
+      throw new Error("Notifications permission not granted");
   }
 
-  const publicKey = await fetchVapidKey(token)
-  if (!publicKey) throw new Error('Push not configured on server')
+  const publicKey = await fetchVapidKey(token);
+  if (!publicKey) throw new Error("Push not configured on server");
 
-  const registration = await navigator.serviceWorker.register('/sw.js')
-  await navigator.serviceWorker.ready
+  const registration = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
 
-  const existing = await registration.pushManager.getSubscription()
-  const applicationServerKey = urlBase64ToArrayBuffer(publicKey)
+  const existing = await registration.pushManager.getSubscription();
+  const applicationServerKey = urlBase64ToArrayBuffer(publicKey);
 
-  let subscription = existing
+  let subscription = existing;
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey,
-    })
+    });
   }
 
-  await postSubscription(token, subscription)
+  await postSubscription(token, subscription);
 }
 
 /**
@@ -135,23 +139,23 @@ export async function registerPushAndSubscribe(token: string): Promise<void> {
  * try the server but swallow the error).
  */
 export async function unsubscribePush(token: string): Promise<void> {
-  if (!pushSupported()) return
+  if (!pushSupported()) return;
 
-  const registration = await navigator.serviceWorker.getRegistration('/sw.js')
-  if (!registration) return
+  const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+  if (!registration) return;
 
-  const subscription = await registration.pushManager.getSubscription()
-  if (!subscription) return
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) return;
 
-  const endpoint = subscription.endpoint
+  const endpoint = subscription.endpoint;
   try {
-    await subscription.unsubscribe()
+    await subscription.unsubscribe();
   } catch {
     // Browser said no — server still needs to be told, fall through.
   }
 
   try {
-    await postUnsubscription(token, endpoint)
+    await postUnsubscription(token, endpoint);
   } catch {
     // Network errors during logout shouldn't block the user signing out.
   }
@@ -162,18 +166,20 @@ export async function unsubscribePush(token: string): Promise<void> {
  * to call on mount.
  */
 export async function getPushSubscriptionState(): Promise<{
-  supported: boolean
-  permission: NotificationPermission
-  subscribed: boolean
+  supported: boolean;
+  permission: NotificationPermission;
+  subscribed: boolean;
 }> {
   if (!pushSupported()) {
-    return { supported: false, permission: 'denied', subscribed: false }
+    return { supported: false, permission: "denied", subscribed: false };
   }
-  const registration = await navigator.serviceWorker.getRegistration('/sw.js')
-  const sub = registration ? await registration.pushManager.getSubscription() : null
+  const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+  const sub = registration
+    ? await registration.pushManager.getSubscription()
+    : null;
   return {
     supported: true,
     permission: Notification.permission,
     subscribed: Boolean(sub),
-  }
+  };
 }

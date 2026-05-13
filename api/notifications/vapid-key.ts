@@ -1,5 +1,5 @@
-import { defineHandler } from '../../apps/api/src/lib/handler'
-import { env } from '../../apps/api/src/lib/env'
+import { defineHandler } from "../../apps/api/src/lib/handler";
+import { env } from "../../apps/api/src/lib/env";
 
 /**
  * GET /api/notifications/vapid-key
@@ -19,19 +19,19 @@ import { env } from '../../apps/api/src/lib/env'
 export default defineHandler(
   (_req, res) => {
     if (!env.VAPID_PUBLIC_KEY) {
-      if (env.NODE_ENV === 'production') {
+      if (env.NODE_ENV === "production") {
         res.status(503).json({
           error: {
-            code: 'PUSH_NOT_CONFIGURED',
-            message: 'Web push is not enabled on this server',
+            code: "PUSH_NOT_CONFIGURED",
+            message: "Web push is not enabled on this server",
           },
-        })
-        return
+        });
+        return;
       }
-      res.status(200).json({ publicKey: null })
-      return
+      res.status(200).json({ publicKey: null });
+      return;
     }
-    res.status(200).json({ publicKey: env.VAPID_PUBLIC_KEY })
+    res.status(200).json({ publicKey: env.VAPID_PUBLIC_KEY });
   },
-  { methods: ['GET'] },
-)
+  { methods: ["GET"] },
+);

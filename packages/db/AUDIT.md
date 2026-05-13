@@ -16,27 +16,27 @@ DPO will ask to see during an investigation or DPA review.
 
 ### Mutations (writes) — already in place
 
-| `action`                       | `resource_type`   | Trigger                                              |
-| ------------------------------ | ----------------- | ---------------------------------------------------- |
-| `auth.login.success`           | `agent`           | Successful login                                     |
-| `auth.login.failed`            | `agent`           | Bad password / locked-out attempt                    |
-| `auth.password.reset`          | `agent`           | Password reset completed                             |
-| `agent.invite`                 | `agent`           | Invite sent                                          |
-| `agent.update` / `agent.delete`| `agent`           | Role / status change                                 |
-| `conversation.updated`         | `conversation`    | Status / assignment / tags / urgency change          |
-| `settings.ai.updated`          | `tenant_settings` | AI persona / language / tone change                  |
-| `settings.channels.updated`    | `tenant_settings` | Channel credential rotation                          |
-| `shopify.install`              | `tenant`          | OAuth callback completed                             |
+| `action`                        | `resource_type`   | Trigger                                     |
+| ------------------------------- | ----------------- | ------------------------------------------- |
+| `auth.login.success`            | `agent`           | Successful login                            |
+| `auth.login.failed`             | `agent`           | Bad password / locked-out attempt           |
+| `auth.password.reset`           | `agent`           | Password reset completed                    |
+| `agent.invite`                  | `agent`           | Invite sent                                 |
+| `agent.update` / `agent.delete` | `agent`           | Role / status change                        |
+| `conversation.updated`          | `conversation`    | Status / assignment / tags / urgency change |
+| `settings.ai.updated`           | `tenant_settings` | AI persona / language / tone change         |
+| `settings.channels.updated`     | `tenant_settings` | Channel credential rotation                 |
+| `shopify.install`               | `tenant`          | OAuth callback completed                    |
 
 ### Reads — added for DPDP §9 / GDPR Art. 30
 
-| `action`                          | `resource_type`         | Endpoint                                       |
-| --------------------------------- | ----------------------- | ---------------------------------------------- |
-| `data.read.conversation`          | `conversation`          | `GET /api/conversations/:id`                   |
-| `data.read.conversation_list`     | `conversation_list`     | `GET /api/conversations`                       |
-| `data.read.conversation_messages` | `conversation_messages` | `GET /api/conversations/:id/messages`          |
-| `data.read.customer`              | `customer`              | `GET /api/customers/:id` (when route exists)   |
-| `data.read.customer_list`         | `customer_list`         | `GET /api/customers`                           |
+| `action`                          | `resource_type`         | Endpoint                                     |
+| --------------------------------- | ----------------------- | -------------------------------------------- |
+| `data.read.conversation`          | `conversation`          | `GET /api/conversations/:id`                 |
+| `data.read.conversation_list`     | `conversation_list`     | `GET /api/conversations`                     |
+| `data.read.conversation_messages` | `conversation_messages` | `GET /api/conversations/:id/messages`        |
+| `data.read.customer`              | `customer`              | `GET /api/customers/:id` (when route exists) |
+| `data.read.customer_list`         | `customer_list`         | `GET /api/customers`                         |
 
 All read events use `action = 'data.read.<resource_type>'` so a single
 `WHERE action LIKE 'data.read.%'` returns the full read trail.
@@ -83,15 +83,15 @@ agent typed.
   "query": {
     "page": 2,
     "pageSize": 25,
-    "status": "open",          // enum filters: pass-through
+    "status": "open", // enum filters: pass-through
     "channel": "whatsapp",
     "sortBy": "updatedAt",
     "sortDir": "desc",
     "tier": "vip",
-    "hasSearch": true,         // boolean — true if free-text was supplied
-    "hasCursor": false,        // boolean — true if a pagination cursor was used
-    "messageCount": 42         // for messages reads only
-  }
+    "hasSearch": true, // boolean — true if free-text was supplied
+    "hasCursor": false, // boolean — true if a pagination cursor was used
+    "messageCount": 42, // for messages reads only
+  },
 }
 ```
 
@@ -107,7 +107,7 @@ Free-form per-action object, e.g. for `conversation.updated`:
 {
   "status": "resolved",
   "assignedTo": "uuid-of-agent",
-  "tags": ["refund", "vip"]
+  "tags": ["refund", "vip"],
 }
 ```
 
@@ -149,7 +149,7 @@ WHERE  tenant_id    = $1
 ORDER  BY created_at DESC;
 ```
 
-**2. Did *anyone* in this tenant access personal data on a given day?**
+**2. Did _anyone_ in this tenant access personal data on a given day?**
 
 ```sql
 SELECT actor_email,
@@ -208,10 +208,10 @@ ORDER  BY created_at DESC;
 ## Safety rules for adding new audit events
 
 - New writes → call `auditAction({...})` after the DB mutation succeeds.
-- New reads  → use a helper from `apps/api/src/lib/audit-helpers.ts` and
+- New reads → use a helper from `apps/api/src/lib/audit-helpers.ts` and
   always `void` the call — audit must never block the response.
 - **Never** put raw PII (phone, email, name, message body) into
   `metadata`, `before_state`, or `after_state`. Resource IDs only.
 - **Never** log secrets — passwords, tokens, API keys, encrypted blobs.
-- For high-volume list reads, capture filter *shape* (`hasSearch: true`),
+- For high-volume list reads, capture filter _shape_ (`hasSearch: true`),
   not values.

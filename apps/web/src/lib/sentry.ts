@@ -1,9 +1,9 @@
-import * as Sentry from '@sentry/react'
+import * as Sentry from "@sentry/react";
 
 interface SentryUser {
-  id: string
-  tenantId: string
-  email?: string
+  id: string;
+  tenantId: string;
+  email?: string;
 }
 
 /**
@@ -11,10 +11,10 @@ interface SentryUser {
  * No-op when VITE_SENTRY_DSN is unset (e.g. local dev without DSN).
  */
 export function initSentry(): void {
-  const dsn = import.meta.env.VITE_SENTRY_DSN
-  if (!dsn) return
+  const dsn = import.meta.env.VITE_SENTRY_DSN;
+  if (!dsn) return;
 
-  const isProd = import.meta.env.MODE === 'production'
+  const isProd = import.meta.env.MODE === "production";
 
   Sentry.init({
     dsn,
@@ -29,7 +29,7 @@ export function initSentry(): void {
     ],
     replaysSessionSampleRate: 0.05,
     replaysOnErrorSampleRate: 1.0,
-  })
+  });
 }
 
 /**
@@ -38,16 +38,16 @@ export function initSentry(): void {
  */
 export function setSentryUser(user: SentryUser | null): void {
   if (user === null) {
-    Sentry.setUser(null)
-    return
+    Sentry.setUser(null);
+    return;
   }
   Sentry.setUser({
     id: user.id,
     email: user.email,
     // segment: arbitrary tenant tag for filtering in Sentry UI
     tenant_id: user.tenantId,
-  })
+  });
 }
 
 /** Re-export Sentry's ErrorBoundary so app code only imports from this module. */
-export const SentryErrorBoundary = Sentry.ErrorBoundary
+export const SentryErrorBoundary = Sentry.ErrorBoundary;

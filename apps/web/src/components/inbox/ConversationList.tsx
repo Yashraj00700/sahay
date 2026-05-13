@@ -1,41 +1,49 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Search, SlidersHorizontal, ChevronDown,
-  Inbox, X, Loader2,
-} from 'lucide-react'
-import clsx from 'clsx'
-import { api } from '../../lib/api'
-import { queryKeys } from '../../lib/queryClient'
-import { useAuthStore } from '../../store/auth.store'
-import { useInboxStore } from '../../store/inbox.store'
-import type { Conversation, ConversationStatus, PaginatedResponse } from '@sahay/shared'
-import { ConversationRow } from './ConversationRow'
-import { EmptyInboxState } from './EmptyInboxState'
+  Search,
+  SlidersHorizontal,
+  ChevronDown,
+  Inbox,
+  X,
+  Loader2,
+} from "lucide-react";
+import clsx from "clsx";
+import { api } from "../../lib/api";
+import { queryKeys } from "../../lib/queryClient";
+import { useAuthStore } from "../../store/auth.store";
+import { useInboxStore } from "../../store/inbox.store";
+import type {
+  Conversation,
+  ConversationStatus,
+  PaginatedResponse,
+} from "@sahay/shared";
+import { ConversationRow } from "./ConversationRow";
+import { EmptyInboxState } from "./EmptyInboxState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type FilterTab = 'all' | ConversationStatus
+type FilterTab = "all" | ConversationStatus;
 
 interface ConversationListProps {
-  onSelect: (id: string) => void
-  activeId: string | null
+  onSelect: (id: string) => void;
+  activeId: string | null;
 }
 
 const FILTER_TABS: { label: string; value: FilterTab }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Open', value: 'open' },
-  { label: 'Pending', value: 'pending' },
-  { label: 'Snoozed', value: 'snoozed' },
-]
+  { label: "All", value: "all" },
+  { label: "Open", value: "open" },
+  { label: "Pending", value: "pending" },
+  { label: "Snoozed", value: "snoozed" },
+];
 
 const SORT_OPTIONS = [
-  { label: 'Newest first', value: 'newest' as const },
-  { label: 'Unresolved >4h', value: 'oldest_unresolved' as const },
-  { label: 'Urgency', value: 'urgency_desc' as const },
-  { label: 'VIP first', value: 'vip_first' as const },
-]
+  { label: "Newest first", value: "newest" as const },
+  { label: "Unresolved >4h", value: "oldest_unresolved" as const },
+  { label: "Urgency", value: "urgency_desc" as const },
+  { label: "VIP first", value: "vip_first" as const },
+];
 
 // ─── Skeleton Row ─────────────────────────────────────────────────────────────
 
@@ -57,95 +65,109 @@ function SkeletonRow({ index }: { index: number }) {
         <div className="h-3 bg-gray-200 rounded animate-pulse w-3/4" />
       </div>
     </motion.div>
-  )
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ConversationList({ onSelect, activeId }: ConversationListProps) {
-  const tenant = useAuthStore(s => s.tenant)
-  const { filters, setFilter, sort, setSort } = useInboxStore()
-  const queryClient = useQueryClient()
+export function ConversationList({
+  onSelect,
+  activeId,
+}: ConversationListProps) {
+  const tenant = useAuthStore((s) => s.tenant);
+  const { filters, setFilter, sort, setSort } = useInboxStore();
+  const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<FilterTab>('all')
-  const [searchValue, setSearchValue] = useState('')
-  const [sortOpen, setSortOpen] = useState(false)
-  const sortRef = useRef<HTMLDivElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
+  const [activeTab, setActiveTab] = useState<FilterTab>("all");
+  const [searchValue, setSearchValue] = useState("");
+  const [sortOpen, setSortOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // Build query params
   const queryParams = {
-    ...(activeTab !== 'all' && { status: activeTab }),
+    ...(activeTab !== "all" && { status: activeTab }),
     ...(searchValue && { search: searchValue }),
     sort,
     ...filters,
-  }
+  };
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: queryKeys.conversations.list(tenant?.id ?? '', queryParams),
+    queryKey: queryKeys.conversations.list(tenant?.id ?? "", queryParams),
     queryFn: async () => {
-      const res = await api.get<PaginatedResponse<Conversation>>('/conversations', {
-        params: queryParams,
-      })
-      return res.data
+      const res = await api.get<PaginatedResponse<Conversation>>(
+        "/conversations",
+        {
+          params: queryParams,
+        },
+      );
+      return res.data;
     },
     enabled: !!tenant?.id,
     refetchInterval: 15_000,
-  })
+  });
 
-  const conversations = data?.data ?? []
-  const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0)
+  const conversations = data?.data ?? [];
+  const totalUnread = conversations.reduce(
+    (sum, c) => sum + (c.unreadCount ?? 0),
+    0,
+  );
 
   // Cmd+K focus search
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        searchRef.current?.focus()
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
       }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // Close sort dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
-        setSortOpen(false)
+        setSortOpen(false);
       }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
-  const handleTabChange = useCallback((tab: FilterTab) => {
-    setActiveTab(tab)
-    if (tab === 'all') {
-      setFilter('status', undefined)
-    } else {
-      setFilter('status', tab)
-    }
-  }, [setFilter])
+  const handleTabChange = useCallback(
+    (tab: FilterTab) => {
+      setActiveTab(tab);
+      if (tab === "all") {
+        setFilter("status", undefined);
+      } else {
+        setFilter("status", tab);
+      }
+    },
+    [setFilter],
+  );
 
-  const currentSortLabel = SORT_OPTIONS.find(o => o.value === sort)?.label ?? 'Sort'
+  const currentSortLabel =
+    SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Sort";
 
   return (
     <div className="flex flex-col h-full bg-white border-r border-gray-200 w-[320px] flex-shrink-0">
-
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-2 border-b border-gray-100">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Inbox className="w-5 h-5 text-violet-600" />
-            <span className="text-[15px] font-semibold text-gray-900">Inbox</span>
+            <span className="text-[15px] font-semibold text-gray-900">
+              Inbox
+            </span>
             {totalUnread > 0 && (
               <motion.span
                 initial={{ scale: 0.6, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-violet-600 text-white text-[10px] font-bold leading-none"
               >
-                {totalUnread > 99 ? '99+' : totalUnread}
+                {totalUnread > 99 ? "99+" : totalUnread}
               </motion.span>
             )}
           </div>
@@ -153,12 +175,17 @@ export function ConversationList({ onSelect, activeId }: ConversationListProps) 
           {/* Sort dropdown */}
           <div className="relative" ref={sortRef}>
             <button
-              onClick={() => setSortOpen(v => !v)}
+              onClick={() => setSortOpen((v) => !v)}
               className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-800 transition-colors px-2 py-1 rounded-md hover:bg-gray-100"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{currentSortLabel}</span>
-              <ChevronDown className={clsx('w-3 h-3 transition-transform', sortOpen && 'rotate-180')} />
+              <ChevronDown
+                className={clsx(
+                  "w-3 h-3 transition-transform",
+                  sortOpen && "rotate-180",
+                )}
+              />
             </button>
 
             <AnimatePresence>
@@ -170,13 +197,18 @@ export function ConversationList({ onSelect, activeId }: ConversationListProps) 
                   transition={{ duration: 0.12 }}
                   className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-50"
                 >
-                  {SORT_OPTIONS.map(opt => (
+                  {SORT_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
-                      onClick={() => { setSort(opt.value); setSortOpen(false) }}
+                      onClick={() => {
+                        setSort(opt.value);
+                        setSortOpen(false);
+                      }}
                       className={clsx(
-                        'w-full text-left text-[13px] px-3 py-2 hover:bg-violet-50 transition-colors',
-                        sort === opt.value ? 'text-violet-700 font-medium bg-violet-50' : 'text-gray-700'
+                        "w-full text-left text-[13px] px-3 py-2 hover:bg-violet-50 transition-colors",
+                        sort === opt.value
+                          ? "text-violet-700 font-medium bg-violet-50"
+                          : "text-gray-700",
                       )}
                     >
                       {opt.label}
@@ -195,13 +227,13 @@ export function ConversationList({ onSelect, activeId }: ConversationListProps) 
             ref={searchRef}
             type="text"
             value={searchValue}
-            onChange={e => setSearchValue(e.target.value)}
+            onChange={(e) => setSearchValue(e.target.value)}
             placeholder="Search... ⌘K"
             className="w-full pl-8 pr-8 py-2 text-[13px] bg-gray-50 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 placeholder:text-gray-400 transition-all"
           />
           {searchValue && (
             <button
-              onClick={() => setSearchValue('')}
+              onClick={() => setSearchValue("")}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-3.5 h-3.5" />
@@ -216,15 +248,15 @@ export function ConversationList({ onSelect, activeId }: ConversationListProps) 
 
         {/* Filter chips */}
         <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide pb-1">
-          {FILTER_TABS.map(tab => (
+          {FILTER_TABS.map((tab) => (
             <button
               key={tab.value}
               onClick={() => handleTabChange(tab.value)}
               className={clsx(
-                'flex-shrink-0 px-3 py-1 rounded-full text-[12px] font-medium transition-all',
+                "flex-shrink-0 px-3 py-1 rounded-full text-[12px] font-medium transition-all",
                 activeTab === tab.value
-                  ? 'bg-violet-600 text-white shadow-sm'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? "bg-violet-600 text-white shadow-sm"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200",
               )}
             >
               {tab.label}
@@ -257,7 +289,7 @@ export function ConversationList({ onSelect, activeId }: ConversationListProps) 
           <EmptyInboxState />
         ) : (
           <AnimatePresence initial={false}>
-            {conversations.map(conversation => (
+            {conversations.map((conversation) => (
               <ConversationRow
                 key={conversation.id}
                 conversation={conversation}
@@ -281,5 +313,5 @@ export function ConversationList({ onSelect, activeId }: ConversationListProps) 
         </div>
       )}
     </div>
-  )
+  );
 }

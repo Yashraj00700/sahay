@@ -12,13 +12,13 @@ name(s)** to set in Project Settings → Environment Variables.
 
 ## Rotation cadence
 
-| Class | Cadence | Notes |
-| --- | --- | --- |
-| JWT signing keys (`JWT_SECRET`, `JWT_REFRESH_SECRET`) | every 90 days | Rotate during a low-traffic window; existing access tokens become invalid. |
-| `ENCRYPTION_KEY` | every 90 days | Requires a dual-write migration if you have ciphertext at rest — see "Encryption key rotation" below. |
-| Third-party API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `RESEND_API_KEY`, `SENTRY_AUTH_TOKEN`) | every 180 days | Or immediately on suspected leak / employee offboarding. |
-| OAuth tokens issued to tenants (`shopify_access_token`, `wa_*`, `ig_*` per row in DB) | revoke on tenant uninstall + on suspected compromise | Stored encrypted at rest; not in env. |
-| Webhook secrets (`SHOPIFY_WEBHOOK_SECRET`, `WA_APP_SECRET`, `IG_APP_SECRET`) | only when the upstream provider rotates | Coordinate the cutover with the provider's signing key change. |
+| Class                                                                                               | Cadence                                              | Notes                                                                                                 |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| JWT signing keys (`JWT_SECRET`, `JWT_REFRESH_SECRET`)                                               | every 90 days                                        | Rotate during a low-traffic window; existing access tokens become invalid.                            |
+| `ENCRYPTION_KEY`                                                                                    | every 90 days                                        | Requires a dual-write migration if you have ciphertext at rest — see "Encryption key rotation" below. |
+| Third-party API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `RESEND_API_KEY`, `SENTRY_AUTH_TOKEN`) | every 180 days                                       | Or immediately on suspected leak / employee offboarding.                                              |
+| OAuth tokens issued to tenants (`shopify_access_token`, `wa_*`, `ig_*` per row in DB)               | revoke on tenant uninstall + on suspected compromise | Stored encrypted at rest; not in env.                                                                 |
+| Webhook secrets (`SHOPIFY_WEBHOOK_SECRET`, `WA_APP_SECRET`, `IG_APP_SECRET`)                        | only when the upstream provider rotates              | Coordinate the cutover with the provider's signing key change.                                        |
 
 After rotating in Vercel, redeploy production and remove the previous value
 from "Preview" / "Development" environments to avoid drift.
@@ -28,6 +28,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## Auth & crypto
 
 ### `JWT_SECRET`
+
 - **Purpose:** HMAC secret for signing short-lived access tokens.
 - **Generate:** `openssl rand -base64 48`
 - **Rotate:** Generate a new value, set in Vercel (Production), redeploy. All
@@ -37,6 +38,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env var:** `JWT_SECRET`
 
 ### `JWT_REFRESH_SECRET`
+
 - **Purpose:** HMAC secret for long-lived refresh tokens (different from
   `JWT_SECRET` so a leaked access secret can't mint refreshes).
 - **Generate:** `openssl rand -base64 48`
@@ -45,6 +47,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env var:** `JWT_REFRESH_SECRET`
 
 ### `ENCRYPTION_KEY`
+
 - **Purpose:** AES-GCM key wrapping all column-level secrets at rest (OAuth
   access tokens, Shopify session tokens, integration credentials).
 - **Generate:** `openssl rand -base64 48`
@@ -61,6 +64,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## Storage
 
 ### `DATABASE_URL`
+
 - **Purpose:** Postgres connection string (Neon / RDS / etc.). Includes the
   password.
 - **Generate:** Provisioned by your Postgres provider; rotate the role's
@@ -72,6 +76,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env var:** `DATABASE_URL`
 
 ### `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
+
 - **Purpose:** Upstash Redis — used by rate limiting, login lockout,
   install-state nonces, idempotency markers.
 - **Generate:** Created by Upstash when you provision the database.
@@ -80,6 +85,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env vars:** `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
 
 ### `R2_*` (Cloudflare R2 object storage)
+
 - **Purpose:** S3-compatible storage for attachments, AI-generated assets.
 - **Generate:** Cloudflare dashboard → R2 → "Manage R2 API Tokens" → create
   token with read/write to the bucket.
@@ -93,6 +99,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## AI providers
 
 ### `ANTHROPIC_API_KEY`
+
 - **Purpose:** Anthropic Claude API for primary chat / classification.
 - **Generate:** Anthropic Console → API Keys → "Create Key".
 - **Rotate:** Create a new key, deploy, then revoke the old one. Anthropic
@@ -100,6 +107,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env var:** `ANTHROPIC_API_KEY`
 
 ### `OPENAI_API_KEY`
+
 - **Purpose:** OpenAI fallback / embeddings.
 - **Generate:** OpenAI dashboard → API keys → "Create new secret key".
 - **Rotate:** New key, deploy, revoke old. Set per-key spend limits.
@@ -110,6 +118,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## Shopify
 
 ### `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET`
+
 - **Purpose:** OAuth client credentials for the Sahay Shopify app.
 - **Generate:** Shopify Partner Dashboard → your app → "API credentials".
 - **Rotate:** Use Partner Dashboard → "Rotate API credentials". This forces
@@ -117,6 +126,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env vars:** `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`
 
 ### `SHOPIFY_WEBHOOK_SECRET`
+
 - **Purpose:** HMAC verification of incoming Shopify webhooks.
 - **Generate:** Provided by Shopify per app — same as `SHOPIFY_API_SECRET`
   for app-scoped webhooks.
@@ -128,6 +138,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## WhatsApp Business / Meta
 
 ### `WA_ACCESS_TOKEN`
+
 - **Purpose:** System-user permanent access token for sending WhatsApp
   messages and reading status.
 - **Generate:** Meta Business Suite → Business Settings → System Users →
@@ -138,6 +149,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env var:** `WA_ACCESS_TOKEN`
 
 ### `WA_APP_SECRET`
+
 - **Purpose:** HMAC verification of incoming WhatsApp webhooks.
 - **Generate:** Meta App Dashboard → Settings → Basic → "App Secret".
 - **Rotate:** Click "Reset" on the App Secret. Coordinate the deploy
@@ -146,6 +158,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env var:** `WA_APP_SECRET`
 
 ### `WA_VERIFY_TOKEN`
+
 - **Purpose:** Static string Meta echoes during webhook subscription. Not
   cryptographic, but must match in both places.
 - **Generate:** `openssl rand -hex 24`
@@ -158,12 +171,14 @@ from "Preview" / "Development" environments to avoid drift.
 ## Instagram
 
 ### `IG_APP_SECRET`
+
 - **Purpose:** HMAC verification of incoming Instagram webhook events.
 - **Generate:** Meta App Dashboard → Settings → Basic → "App Secret".
 - **Rotate:** Same procedure as `WA_APP_SECRET`.
 - **Vercel env var:** `IG_APP_SECRET`
 
 ### `IG_VERIFY_TOKEN`
+
 - **Purpose:** Webhook subscription handshake.
 - **Generate:** `openssl rand -hex 24`
 - **Rotate:** Update in Vercel and Meta webhook config together.
@@ -174,6 +189,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## Email (Resend)
 
 ### `RESEND_API_KEY`
+
 - **Purpose:** Sends transactional email (login, alerts, digest).
 - **Generate:** Resend dashboard → API Keys → "Create API Key" with "Sending
   access" scope.
@@ -185,6 +201,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## Sentry
 
 ### `SENTRY_DSN`
+
 - **Purpose:** Public DSN for client+server error reporting. Not strictly
   secret but environment-specific.
 - **Generate:** Sentry → Settings → Projects → Client Keys (DSN).
@@ -193,6 +210,7 @@ from "Preview" / "Development" environments to avoid drift.
 - **Vercel env var:** `SENTRY_DSN`
 
 ### `SENTRY_AUTH_TOKEN`
+
 - **Purpose:** Build-time token for uploading source maps.
 - **Generate:** Sentry → Settings → Account → Auth Tokens → "Create New
   Token", scope: `project:releases`.
@@ -204,6 +222,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## Pusher
 
 ### `PUSHER_APP_ID` / `PUSHER_KEY` / `PUSHER_SECRET`
+
 - **Purpose:** Realtime fan-out for the agent inbox.
 - **Generate:** Pusher Channels dashboard → your app → "App Keys".
 - **Rotate:** Click "Refresh" beside the key/secret pair you want to
@@ -217,6 +236,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## Inngest
 
 ### `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY`
+
 - **Purpose:** Event ingestion and webhook signature verification for
   background workflows.
 - **Generate:** Inngest dashboard → Manage → Event Keys / Signing Keys →
@@ -231,6 +251,7 @@ from "Preview" / "Development" environments to avoid drift.
 ## Web Push (VAPID)
 
 ### `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`
+
 - **Purpose:** Identifies our backend as the legitimate sender of browser
   push notifications.
 - **Generate:** `npx web-push generate-vapid-keys`

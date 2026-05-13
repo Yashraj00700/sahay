@@ -25,34 +25,34 @@
  *     trust client-provided paths.
  */
 
-import { z } from 'zod'
-import { conversations } from '@sahay/db'
-import { and, eq } from 'drizzle-orm'
-import { randomUUID } from 'node:crypto'
+import { z } from "zod";
+import { conversations } from "@sahay/db";
+import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
-import { defineAuthedHandler, parseBody } from '../../apps/api/src/lib/handler'
-import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
-import { NotFoundError, ValidationError } from '../../apps/api/src/lib/errors'
+import { defineAuthedHandler, parseBody } from "../../apps/api/src/lib/handler";
+import { enforce, limits } from "../../apps/api/src/lib/rate-limit";
+import { NotFoundError, ValidationError } from "../../apps/api/src/lib/errors";
 import {
   getSignedUploadUrl,
   isR2Configured,
   keyFor,
   publicUrl,
   MAX_FILE_SIZE_BYTES,
-} from '../../apps/api/src/services/storage/r2'
+} from "../../apps/api/src/services/storage/r2";
 
 const ALLOWED_CONTENT_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'application/pdf',
-  'audio/ogg',
-  'audio/mpeg',
-  'video/mp4',
-] as const
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "audio/ogg",
+  "audio/mpeg",
+  "video/mp4",
+] as const;
 
 const uploadBodySchema = z.object({
-  conversationId: z.string().uuid('conversationId must be a UUID'),
+  conversationId: z.string().uuid("conversationId must be a UUID"),
   fileName: z.string().min(1).max(255),
   contentType: z.enum(ALLOWED_CONTENT_TYPES),
   sizeBytes: z
@@ -60,7 +60,7 @@ const uploadBodySchema = z.object({
     .int()
     .positive()
     .max(MAX_FILE_SIZE_BYTES, `sizeBytes must be ≤ ${MAX_FILE_SIZE_BYTES}`),
-})
+});
 
 /**
  * Maps a content-type to a canonical extension for the R2 key. We don't read
@@ -69,36 +69,36 @@ const uploadBodySchema = z.object({
  */
 function extForContentType(contentType: string): string {
   switch (contentType) {
-    case 'image/jpeg':
-      return 'jpg'
-    case 'image/png':
-      return 'png'
-    case 'image/webp':
-      return 'webp'
-    case 'application/pdf':
-      return 'pdf'
-    case 'audio/ogg':
-      return 'ogg'
-    case 'audio/mpeg':
-      return 'mp3'
-    case 'video/mp4':
-      return 'mp4'
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "application/pdf":
+      return "pdf";
+    case "audio/ogg":
+      return "ogg";
+    case "audio/mpeg":
+      return "mp3";
+    case "video/mp4":
+      return "mp4";
     default:
-      return 'bin'
+      return "bin";
   }
 }
 
 export default defineAuthedHandler(
   async (req, _res, ctx) => {
-    await enforce(limits.perTenant(), ctx.tenant.id)
+    await enforce(limits.perTenant(), ctx.tenant.id);
 
     if (!isR2Configured()) {
       throw new ValidationError(
-        'Attachment uploads are disabled (storage not configured)',
-      )
+        "Attachment uploads are disabled (storage not configured)",
+      );
     }
 
-    const body = parseBody(uploadBodySchema, req.body)
+    const body = parseBody(uploadBodySchema, req.body);
 
     // Verify conversation belongs to caller's tenant.
     const [conv] = await ctx.withTenant((tx) =>
@@ -112,31 +112,31 @@ export default defineAuthedHandler(
           ),
         )
         .limit(1),
-    )
+    );
 
     if (!conv) {
-      throw new NotFoundError('Conversation not found')
+      throw new NotFoundError("Conversation not found");
     }
 
     // Generate a unique per-upload id so two parallel uploads to the same
     // conversation never collide. We reuse the existing `keyFor` helper so
     // R2 keys for inbound (channel media) and outbound (agent uploads) share
     // the same prefix structure.
-    const uploadId = randomUUID()
-    const ext = extForContentType(body.contentType)
+    const uploadId = randomUUID();
+    const ext = extForContentType(body.contentType);
     const key = keyFor({
       tenantId: ctx.tenant.id,
-      channel: 'agent-upload',
+      channel: "agent-upload",
       messageId: uploadId,
       ext,
-    })
+    });
 
     const signed = await getSignedUploadUrl({
       key,
       contentType: body.contentType,
       // 5 minutes is enough for even a 16 MiB upload over a slow link.
       expiresInSec: 5 * 60,
-    })
+    });
 
     return {
       uploadUrl: signed.url,
@@ -148,7 +148,7 @@ export default defineAuthedHandler(
       sizeBytes: body.sizeBytes,
       conversationId: body.conversationId,
       expiresInSec: 5 * 60,
-    }
+    };
   },
-  { methods: ['POST'] },
-)
+  { methods: ["POST"] },
+);

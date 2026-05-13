@@ -9,23 +9,23 @@
 // affect every tenant — but only super_admin sees the "global" namespace
 // admin controls.
 
-import { z } from 'zod'
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm'
+import { z } from "zod";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import {
   experiments,
   experimentAssignments,
   experimentOutcomes,
   type ExperimentVariant,
-} from '@sahay/db'
+} from "@sahay/db";
 import {
   defineAuthedHandler,
   parseBody,
   requireRole,
-} from '../../../apps/api/src/lib/handler'
-import { enforce, limits } from '../../../apps/api/src/lib/rate-limit'
-import { auditAction } from '../../../apps/api/src/services/audit'
-import { ValidationError } from '../../../apps/api/src/lib/errors'
-import { normaliseVariants } from '../../../apps/api/src/services/ai/experiments'
+} from "../../../apps/api/src/lib/handler";
+import { enforce, limits } from "../../../apps/api/src/lib/rate-limit";
+import { auditAction } from "../../../apps/api/src/services/audit";
+import { ValidationError } from "../../../apps/api/src/lib/errors";
+import { normaliseVariants } from "../../../apps/api/src/services/ai/experiments";
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
@@ -33,7 +33,7 @@ const VariantSchema = z.object({
   name: z.string().min(1).max(80),
   weight: z.number().nonnegative(),
   config: z.record(z.unknown()).default({}),
-})
+});
 
 const UpsertSchema = z.object({
   key: z.string().min(1).max(80),
@@ -44,43 +44,43 @@ const UpsertSchema = z.object({
   startsAt: z.string().datetime().optional().nullable(),
   /** super_admin only — when true, persists with tenantId = null. */
   global: z.boolean().optional().default(false),
-})
+});
 
 // ─── Response types ─────────────────────────────────────────────────────────
 
 interface ExperimentSummary {
-  id: string
-  tenantId: string | null
-  key: string
-  description: string | null
-  isActive: boolean
-  startsAt: string | null
-  endsAt: string | null
-  variants: ExperimentVariant[]
+  id: string;
+  tenantId: string | null;
+  key: string;
+  description: string | null;
+  isActive: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  variants: ExperimentVariant[];
   recentAssignments: Array<{
-    id: string
-    variant: string
-    subjectType: string
-    subjectId: string
-    assignedAt: string | null
-  }>
+    id: string;
+    variant: string;
+    subjectType: string;
+    subjectId: string;
+    assignedAt: string | null;
+  }>;
   recentOutcomes: Array<{
-    id: string
-    metric: string
-    value: number
-    recordedAt: string | null
-  }>
-  totalAssignments: number
+    id: string;
+    metric: string;
+    value: number;
+    recordedAt: string | null;
+  }>;
+  totalAssignments: number;
 }
 
 // ─── Handler ────────────────────────────────────────────────────────────────
 
 export default defineAuthedHandler(
   async (req, res, ctx) => {
-    requireRole(ctx, ['super_admin', 'admin'])
-    await enforce(limits.perTenant(), ctx.tenant.id)
+    requireRole(ctx, ["super_admin", "admin"]);
+    await enforce(limits.perTenant(), ctx.tenant.id);
 
-    if (req.method === 'GET') {
+    if (req.method === "GET") {
       // List experiments visible to this tenant + globals.
       const rows = await ctx.withTenant((tx) =>
         tx
@@ -93,9 +93,9 @@ export default defineAuthedHandler(
             ),
           )
           .orderBy(desc(experiments.createdAt)),
-      )
+      );
 
-      const summaries: ExperimentSummary[] = []
+      const summaries: ExperimentSummary[] = [];
 
       for (const exp of rows) {
         const [assignments, outcomes, totalRows] = await ctx.withTenant((tx) =>
@@ -133,7 +133,7 @@ export default defineAuthedHandler(
               .from(experimentAssignments)
               .where(eq(experimentAssignments.experimentId, exp.id)),
           ]),
-        )
+        );
 
         summaries.push({
           id: exp.id,
@@ -158,26 +158,26 @@ export default defineAuthedHandler(
             recordedAt: o.recordedAt ? o.recordedAt.toISOString() : null,
           })),
           totalAssignments: totalRows[0]?.count ?? 0,
-        })
+        });
       }
 
-      res.status(200).json({ experiments: summaries })
-      return
+      res.status(200).json({ experiments: summaries });
+      return;
     }
 
-    if (req.method === 'POST') {
-      const body = parseBody(UpsertSchema, req.body)
+    if (req.method === "POST") {
+      const body = parseBody(UpsertSchema, req.body);
 
-      if (body.global && ctx.agent.role !== 'super_admin') {
+      if (body.global && ctx.agent.role !== "super_admin") {
         throw new ValidationError(
-          'Only super_admin may create or update global experiments',
-        )
+          "Only super_admin may create or update global experiments",
+        );
       }
 
-      const norm = normaliseVariants(body.variants)
-      if (!norm.ok) throw new ValidationError(norm.reason)
+      const norm = normaliseVariants(body.variants);
+      if (!norm.ok) throw new ValidationError(norm.reason);
 
-      const targetTenantId = body.global ? null : ctx.tenant.id
+      const targetTenantId = body.global ? null : ctx.tenant.id;
 
       // Upsert by (tenantId, key). Drizzle doesn't natively support
       // composite ON CONFLICT without a unique index, so we do find-then-
@@ -194,10 +194,10 @@ export default defineAuthedHandler(
                 : isNull(experiments.tenantId),
             ),
           )
-          .limit(1)
+          .limit(1);
 
-        const startsAt = body.startsAt ? new Date(body.startsAt) : undefined
-        const endsAt = body.endsAt ? new Date(body.endsAt) : null
+        const startsAt = body.startsAt ? new Date(body.startsAt) : undefined;
+        const endsAt = body.endsAt ? new Date(body.endsAt) : null;
 
         if (existingRows[0]) {
           const updated = await tx
@@ -211,8 +211,8 @@ export default defineAuthedHandler(
               updatedAt: new Date(),
             })
             .where(eq(experiments.id, existingRows[0].id))
-            .returning()
-          return { row: updated[0], created: false }
+            .returning();
+          return { row: updated[0], created: false };
         }
 
         const inserted = await tx
@@ -226,17 +226,17 @@ export default defineAuthedHandler(
             ...(startsAt !== undefined ? { startsAt } : {}),
             endsAt,
           })
-          .returning()
-        return { row: inserted[0], created: true }
-      })
+          .returning();
+        return { row: inserted[0], created: true };
+      });
 
       await auditAction({
         tenantId: ctx.tenant.id,
-        actorType: 'agent',
+        actorType: "agent",
         actorId: ctx.agent.id,
         actorEmail: ctx.agent.email,
-        action: result.created ? 'experiment.create' : 'experiment.update',
-        resourceType: 'experiment',
+        action: result.created ? "experiment.create" : "experiment.update",
+        resourceType: "experiment",
         resourceId: result.row.id,
         metadata: {
           key: body.key,
@@ -247,7 +247,7 @@ export default defineAuthedHandler(
         ipAddress: ctx.ip,
         userAgent: ctx.userAgent,
         requestId: ctx.requestId,
-      })
+      });
 
       res.status(result.created ? 201 : 200).json({
         experiment: {
@@ -257,15 +257,21 @@ export default defineAuthedHandler(
           description: result.row.description,
           variants: result.row.variants,
           isActive: result.row.isActive,
-          startsAt: result.row.startsAt ? result.row.startsAt.toISOString() : null,
+          startsAt: result.row.startsAt
+            ? result.row.startsAt.toISOString()
+            : null,
           endsAt: result.row.endsAt ? result.row.endsAt.toISOString() : null,
-          createdAt: result.row.createdAt ? result.row.createdAt.toISOString() : null,
-          updatedAt: result.row.updatedAt ? result.row.updatedAt.toISOString() : null,
+          createdAt: result.row.createdAt
+            ? result.row.createdAt.toISOString()
+            : null,
+          updatedAt: result.row.updatedAt
+            ? result.row.updatedAt.toISOString()
+            : null,
         },
         created: result.created,
-      })
-      return
+      });
+      return;
     }
   },
-  { methods: ['GET', 'POST'] },
-)
+  { methods: ["GET", "POST"] },
+);

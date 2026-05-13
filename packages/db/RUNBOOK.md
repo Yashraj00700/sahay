@@ -105,7 +105,6 @@ migration with `db:generate -- --name revert_<thing>` and ship it.
    `drizzle/<NNNN>_<verb_what>.sql`.
 
 3. **Review the generated SQL.** Open it and confirm:
-
    - Column types match what you intended (esp. timestamps with timezone,
      numeric precision/scale, jsonb defaults).
    - Drops / renames are intentional. Drizzle sometimes asks you to choose
@@ -143,7 +142,7 @@ migration with `db:generate -- --name revert_<thing>` and ship it.
   read it even though `generate` doesn't connect. Workaround:
   `DATABASE_URL=postgres://noop@localhost:5432/noop npm run db:generate`.
 - **`migrate-prod.ts` fails on `relation "__drizzle_migrations" does not
-  exist`:** that's just the first run and is benign — the migrator
+exist`:** that's just the first run and is benign — the migrator
   creates the table before applying anything.
 - **pgvector errors (`extension "vector" does not exist`):** Neon supports
   `vector` natively — make sure you haven't switched to a database that

@@ -1,12 +1,12 @@
-import { eq } from 'drizzle-orm'
-import { agents, withTenant } from '@sahay/db'
-import { inngest } from '../client'
+import { eq } from "drizzle-orm";
+import { agents, withTenant } from "@sahay/db";
+import { inngest } from "../client";
 import {
   sendPush,
   isPushConfigured,
   type WebPushSubscription,
-} from '../../services/push'
-import { auditAction } from '../../services/audit'
+} from "../../services/push";
+import { auditAction } from "../../services/audit";
 
 /**
  * notifications-push
@@ -28,8 +28,8 @@ import { auditAction } from '../../services/audit'
  */
 
 interface PushSubscriptionShape {
-  endpoint: string
-  keys?: { p256dh?: string; auth?: string }
+  endpoint: string;
+  keys?: { p256dh?: string; auth?: string };
 }
 
 /**
@@ -37,133 +37,144 @@ interface PushSubscriptionShape {
  * entries (which we'll prune unconditionally — they can never be delivered).
  */
 function partitionSubscriptions(raw: PushSubscriptionShape[]): {
-  valid: WebPushSubscription[]
-  malformed: string[]
+  valid: WebPushSubscription[];
+  malformed: string[];
 } {
-  const valid: WebPushSubscription[] = []
-  const malformed: string[] = []
+  const valid: WebPushSubscription[] = [];
+  const malformed: string[] = [];
   for (const sub of raw) {
     if (
-      typeof sub.endpoint === 'string' &&
+      typeof sub.endpoint === "string" &&
       sub.endpoint.length > 0 &&
       sub.keys &&
-      typeof sub.keys.p256dh === 'string' &&
-      typeof sub.keys.auth === 'string'
+      typeof sub.keys.p256dh === "string" &&
+      typeof sub.keys.auth === "string"
     ) {
       valid.push({
         endpoint: sub.endpoint,
         keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
-      })
-    } else if (typeof sub.endpoint === 'string') {
-      malformed.push(sub.endpoint)
+      });
+    } else if (typeof sub.endpoint === "string") {
+      malformed.push(sub.endpoint);
     }
   }
-  return { valid, malformed }
+  return { valid, malformed };
 }
 
 export const notificationsPush = inngest.createFunction(
   {
-    id: 'notifications-push',
+    id: "notifications-push",
     retries: 2,
-    concurrency: { limit: 100, key: 'event.data.tenantId' },
+    concurrency: { limit: 100, key: "event.data.tenantId" },
   },
-  { event: 'notifications/push.requested' },
+  { event: "notifications/push.requested" },
   async ({ event, step, logger }) => {
-    const { tenantId, agentId, title, body, url } = event.data
+    const { tenantId, agentId, title, body, url } = event.data;
 
-    const agent = await step.run('load-agent', async () =>
+    const agent = await step.run("load-agent", async () =>
       withTenant(tenantId, async (tx) => {
         const row = await tx.query.agents.findFirst({
           where: eq(agents.id, agentId),
-        })
-        if (!row) throw new Error(`notifications-push: agent ${agentId} not found`)
+        });
+        if (!row)
+          throw new Error(`notifications-push: agent ${agentId} not found`);
         if (row.tenantId !== tenantId) {
           throw new Error(
             `notifications-push: agent ${agentId} belongs to a different tenant`,
-          )
+          );
         }
         return {
           id: row.id,
-          pushSubscriptions: (row.pushSubscriptions ?? []) as PushSubscriptionShape[],
-        }
+          pushSubscriptions: (row.pushSubscriptions ??
+            []) as PushSubscriptionShape[],
+        };
       }),
-    )
+    );
 
     if (agent.pushSubscriptions.length === 0) {
-      logger.info({ tenantId, agentId }, 'notifications-push: no subscriptions')
-      return { delivered: 0, attempted: 0 }
+      logger.info(
+        { tenantId, agentId },
+        "notifications-push: no subscriptions",
+      );
+      return { delivered: 0, attempted: 0 };
     }
 
     if (!isPushConfigured()) {
       logger.info(
         { tenantId, agentId, subs: agent.pushSubscriptions.length },
-        'notifications-push: VAPID not configured, skipping send',
-      )
-      return { delivered: 0, attempted: agent.pushSubscriptions.length, skipped: true }
+        "notifications-push: VAPID not configured, skipping send",
+      );
+      return {
+        delivered: 0,
+        attempted: agent.pushSubscriptions.length,
+        skipped: true,
+      };
     }
 
-    const result = await step.run('send-and-prune', async () => {
-      const { valid, malformed } = partitionSubscriptions(agent.pushSubscriptions)
-      const payload = { title, body, url }
+    const result = await step.run("send-and-prune", async () => {
+      const { valid, malformed } = partitionSubscriptions(
+        agent.pushSubscriptions,
+      );
+      const payload = { title, body, url };
 
       const outcomes = await Promise.allSettled(
         valid.map((sub) => sendPush(sub, payload)),
-      )
+      );
 
-      let delivered = 0
-      const stale: string[] = [...malformed]
+      let delivered = 0;
+      const stale: string[] = [...malformed];
       for (let i = 0; i < outcomes.length; i++) {
-        const o = outcomes[i]
-        const sub = valid[i]
-        if (o.status === 'fulfilled') {
+        const o = outcomes[i];
+        const sub = valid[i];
+        if (o.status === "fulfilled") {
           if (o.value.ok) {
-            delivered++
+            delivered++;
           } else if (o.value.statusCode === 410 || o.value.statusCode === 404) {
-            stale.push(sub.endpoint)
+            stale.push(sub.endpoint);
           }
           // Other failures (5xx, network) leave the sub alone for next time.
         } else {
           // Unexpected throw inside sendPush wrapper — log and keep the sub.
           logger.warn(
             { endpoint: sub.endpoint, err: o.reason },
-            'notifications-push: unexpected sendPush rejection',
-          )
+            "notifications-push: unexpected sendPush rejection",
+          );
         }
       }
 
       if (stale.length > 0) {
-        const staleSet = new Set(stale)
+        const staleSet = new Set(stale);
         const keep = agent.pushSubscriptions.filter(
-          (s) => typeof s.endpoint === 'string' && !staleSet.has(s.endpoint),
-        )
+          (s) => typeof s.endpoint === "string" && !staleSet.has(s.endpoint),
+        );
         await withTenant(tenantId, (tx) =>
           tx
             .update(agents)
             .set({ pushSubscriptions: keep, updatedAt: new Date() })
             .where(eq(agents.id, agentId)),
-        )
+        );
         logger.info(
           { tenantId, agentId, pruned: stale.length, remaining: keep.length },
-          'notifications-push: pruned stale subscriptions',
-        )
+          "notifications-push: pruned stale subscriptions",
+        );
       }
 
-      return { delivered, attempted: valid.length, pruned: stale.length }
-    })
+      return { delivered, attempted: valid.length, pruned: stale.length };
+    });
 
     await auditAction({
       tenantId,
-      actorType: 'system',
-      action: 'notifications.push.delivered',
-      resourceType: 'agent',
+      actorType: "system",
+      action: "notifications.push.delivered",
+      resourceType: "agent",
       resourceId: agentId,
       metadata: {
         delivered: result.delivered,
         attempted: result.attempted,
         pruned: result.pruned,
       },
-    })
+    });
 
-    return result
+    return result;
   },
-)
+);

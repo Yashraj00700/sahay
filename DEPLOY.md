@@ -14,20 +14,20 @@ Functions for the API + webhooks) runs on Vercel. Persistent processes
 
 Provision these accounts and capture credentials before touching code.
 
-| Service | What it does | Plan |
-|---|---|---|
-| **Vercel** | Hosts the web app + API functions | Pro for production (>10s function timeouts, log retention) |
-| **Neon** | Postgres + pgvector | Launch ($19/mo) — autoscaling is fine |
-| **Upstash Redis** | Rate limits + install nonces + embedding cache | Pay-as-you-go (free tier covers MVP) |
-| **Pusher Channels** | Realtime fanout to agent inboxes | Sandbox while testing; Startup ($49/mo) for prod traffic |
-| **Inngest** | Queues + cron + retries | Free tier ≤ 50k events/mo |
-| **Anthropic** | Claude (AI agent) | Console workspace + production rate-limit increase |
-| **OpenAI** | text-embedding-3-small | Standard org + small rate limit increase |
-| **Resend** | Transactional email (password reset, agent invite) | Free tier (3000/mo) for MVP |
-| **Sentry** | Error monitoring | Team plan ($26/mo) for source maps + replays |
-| **Cloudflare R2** | Media storage (WhatsApp images, voice notes) | Pay-as-you-go |
-| **Meta for Developers** | WhatsApp Cloud API + Instagram Messaging | App in production mode |
-| **Shopify Partners** | Public app + OAuth | Production app listing |
+| Service                 | What it does                                       | Plan                                                       |
+| ----------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
+| **Vercel**              | Hosts the web app + API functions                  | Pro for production (>10s function timeouts, log retention) |
+| **Neon**                | Postgres + pgvector                                | Launch ($19/mo) — autoscaling is fine                      |
+| **Upstash Redis**       | Rate limits + install nonces + embedding cache     | Pay-as-you-go (free tier covers MVP)                       |
+| **Pusher Channels**     | Realtime fanout to agent inboxes                   | Sandbox while testing; Startup ($49/mo) for prod traffic   |
+| **Inngest**             | Queues + cron + retries                            | Free tier ≤ 50k events/mo                                  |
+| **Anthropic**           | Claude (AI agent)                                  | Console workspace + production rate-limit increase         |
+| **OpenAI**              | text-embedding-3-small                             | Standard org + small rate limit increase                   |
+| **Resend**              | Transactional email (password reset, agent invite) | Free tier (3000/mo) for MVP                                |
+| **Sentry**              | Error monitoring                                   | Team plan ($26/mo) for source maps + replays               |
+| **Cloudflare R2**       | Media storage (WhatsApp images, voice notes)       | Pay-as-you-go                                              |
+| **Meta for Developers** | WhatsApp Cloud API + Instagram Messaging           | App in production mode                                     |
+| **Shopify Partners**    | Public app + OAuth                                 | Production app listing                                     |
 
 ---
 
@@ -174,8 +174,8 @@ Save outputs as `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Set
 2. App URL: `https://<domain>/onboarding`
 3. Allowed redirection URL: `https://<domain>/api/shopify/callback`
 4. Required access scopes: `read_orders, write_orders, read_customers,
-   write_customers, read_products, write_products, read_fulfillments,
-   read_inventory, write_draft_orders`
+write_customers, read_products, write_products, read_fulfillments,
+read_inventory, write_draft_orders`
 5. Capture `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET`. The webhook
    handler validates HMAC with the API secret (also exported as
    `SHOPIFY_WEBHOOK_SECRET` in env).
@@ -213,6 +213,7 @@ The `.github/workflows/` directory is already set up:
   to production and creates a Sentry release.
 
 Required GitHub secrets:
+
 - `VERCEL_TOKEN` (account → tokens)
 - `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` (project settings → general)
 - `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` (optional —
@@ -254,6 +255,7 @@ Required GitHub secrets:
 - **Upstash**: alert on > 80% memory.
 
 Operational dashboards:
+
 - Vercel Analytics for traffic
 - Inngest dashboard for queue depth + cron health
 - Sentry for error trends

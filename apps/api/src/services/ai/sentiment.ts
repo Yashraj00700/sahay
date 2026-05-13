@@ -5,27 +5,27 @@
 //
 // Outputs a 5-point sentiment scale plus fine-grained emotion tags.
 
-import Anthropic from '@anthropic-ai/sdk'
-import type { SentimentLevel, EmotionTag } from '@sahay/shared'
-import { env } from '../../lib/env'
+import Anthropic from "@anthropic-ai/sdk";
+import type { SentimentLevel, EmotionTag } from "@sahay/shared";
+import { env } from "../../lib/env";
 
-const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface SentimentResult {
-  sentiment: SentimentLevel
+  sentiment: SentimentLevel;
   /** Normalised score: -1.0 (very negative) → +1.0 (very positive) */
-  score: number
-  emotions: EmotionTag[]
+  score: number;
+  emotions: EmotionTag[];
   /** True when sarcasm was detected */
-  isSarcastic: boolean
+  isSarcastic: boolean;
   /** True when urgency language is present */
-  isUrgent: boolean
+  isUrgent: boolean;
   /** Confidence in the sentiment classification 0–1 */
-  confidence: number
+  confidence: number;
   /** Which stage produced the final result: 'heuristic' | 'ai' */
-  source: 'heuristic' | 'ai'
+  source: "heuristic" | "ai";
 }
 
 // ─── Heuristic Signal Tables ──────────────────────────────────────────────────
@@ -33,148 +33,210 @@ export interface SentimentResult {
 /** Maps normalised token → sentiment score (-2 to +2) */
 const HINGLISH_LEXICON: Record<string, number> = {
   // Very negative
-  bekar: -2, bakwaas: -2, 'ghatiya': -2, 'cheat': -2, 'fraud': -2, 'scam': -2,
-  'faltu': -2, 'worst': -2, 'horrible': -2, 'terrible': -2, 'pathetic': -2,
+  bekar: -2,
+  bakwaas: -2,
+  ghatiya: -2,
+  cheat: -2,
+  fraud: -2,
+  scam: -2,
+  faltu: -2,
+  worst: -2,
+  horrible: -2,
+  terrible: -2,
+  pathetic: -2,
   // Negative
-  'bura': -1, 'buri': -1, 'bure': -1, 'problem': -1, 'issue': -1, 'complaint': -1,
-  'naraz': -1, 'pareshan': -1, 'disappointed': -1, 'bad': -1, 'poor': -1,
-  'galat': -1, 'wrong': -1, 'late': -1, 'delay': -1,
-  'nahi mila': -1, 'nahi aaya': -1,
+  bura: -1,
+  buri: -1,
+  bure: -1,
+  problem: -1,
+  issue: -1,
+  complaint: -1,
+  naraz: -1,
+  pareshan: -1,
+  disappointed: -1,
+  bad: -1,
+  poor: -1,
+  galat: -1,
+  wrong: -1,
+  late: -1,
+  delay: -1,
+  "nahi mila": -1,
+  "nahi aaya": -1,
   // Positive
-  'achha': 1, 'accha': 1, 'badhiya': 1, 'sahi': 1, 'theek': 1, 'good': 1,
-  'nice': 1, 'happy': 1, 'satisfied': 1, 'helpful': 1, 'thank': 1, 'thanks': 1,
-  'shukriya': 1, 'dhanyawaad': 1,
+  achha: 1,
+  accha: 1,
+  badhiya: 1,
+  sahi: 1,
+  theek: 1,
+  good: 1,
+  nice: 1,
+  happy: 1,
+  satisfied: 1,
+  helpful: 1,
+  thank: 1,
+  thanks: 1,
+  shukriya: 1,
+  dhanyawaad: 1,
   // Very positive
-  'bahut achha': 2, 'bahut badhiya': 2, 'bohot achha': 2, 'amazing': 2,
-  'excellent': 2, 'superb': 2, 'fantastic': 2, 'love': 2, 'loved': 2,
-  'awesome': 2, 'wonderful': 2, 'best': 2, 'perfect': 2,
-  'bilkul sahi': 1, // NOT sarcasm-detected context
-}
+  "bahut achha": 2,
+  "bahut badhiya": 2,
+  "bohot achha": 2,
+  amazing: 2,
+  excellent: 2,
+  superb: 2,
+  fantastic: 2,
+  love: 2,
+  loved: 2,
+  awesome: 2,
+  wonderful: 2,
+  best: 2,
+  perfect: 2,
+  "bilkul sahi": 1, // NOT sarcasm-detected context
+};
 
 /** Phrases that are definitively negative regardless of context */
 const VERY_NEGATIVE_PHRASES = [
-  'bilkul sahi nahi',
-  'bilkul theek nahi',
-  'kuch kaam nahi',
-  'koi fayda nahi',
-  'total waste',
-  'pura waste',
-  'money wasted',
-  'paisa waste',
-  'worst experience',
-  'never buy again',
-  'dobara nahi lunga',
-  'dobara nahi lungi',
-]
+  "bilkul sahi nahi",
+  "bilkul theek nahi",
+  "kuch kaam nahi",
+  "koi fayda nahi",
+  "total waste",
+  "pura waste",
+  "money wasted",
+  "paisa waste",
+  "worst experience",
+  "never buy again",
+  "dobara nahi lunga",
+  "dobara nahi lungi",
+];
 
 /** Sarcasm markers — "bilkul" or "wah" in negative contexts */
-const SARCASM_TRIGGERS = ['bilkul', 'wah wah', 'wah re', 'kya baat', 'bahut shukriya']
+const SARCASM_TRIGGERS = [
+  "bilkul",
+  "wah wah",
+  "wah re",
+  "kya baat",
+  "bahut shukriya",
+];
 
 /** Urgency signals */
 const URGENCY_SIGNALS = [
-  'urgent', 'jaldi', 'asap', 'immediately', 'abhi', 'turant', 'right now',
-  'emergency', 'kal tak', 'aaj chahiye', 'last chance', 'deadline',
-]
+  "urgent",
+  "jaldi",
+  "asap",
+  "immediately",
+  "abhi",
+  "turant",
+  "right now",
+  "emergency",
+  "kal tak",
+  "aaj chahiye",
+  "last chance",
+  "deadline",
+];
 
 // ─── Emoji Sentiment Map ──────────────────────────────────────────────────────
 
-const EMOJI_SENTIMENT: Record<string, { score: number; emotions?: EmotionTag[] }> = {
-  '😡': { score: -2, emotions: ['frustrated'] },
-  '🤬': { score: -2, emotions: ['frustrated'] },
-  '😤': { score: -1, emotions: ['frustrated'] },
-  '😠': { score: -1, emotions: ['frustrated'] },
-  '😢': { score: -1.5, emotions: ['grief'] },
-  '😭': { score: -1.5, emotions: ['grief'] },
-  '😞': { score: -1, emotions: ['frustrated'] },
-  '😔': { score: -1 },
-  '😕': { score: -0.5, emotions: ['confused'] },
-  '🤔': { score: 0, emotions: ['confused'] },
-  '😐': { score: 0 },
-  '🙂': { score: 0.5 },
-  '😊': { score: 1 },
-  '😍': { score: 2, emotions: ['delighted'] },
-  '🥰': { score: 2, emotions: ['delighted'] },
-  '❤️': { score: 1.5, emotions: ['delighted'] },
-  '👍': { score: 1 },
-  '🙏': { score: 0.5 },
-  '✨': { score: 1 },
-  '🔥': { score: 0.5 },
-  '⚠️': { score: -0.5, emotions: ['urgent'] },
-  '🆘': { score: -1.5, emotions: ['urgent'] },
-}
+const EMOJI_SENTIMENT: Record<
+  string,
+  { score: number; emotions?: EmotionTag[] }
+> = {
+  "😡": { score: -2, emotions: ["frustrated"] },
+  "🤬": { score: -2, emotions: ["frustrated"] },
+  "😤": { score: -1, emotions: ["frustrated"] },
+  "😠": { score: -1, emotions: ["frustrated"] },
+  "😢": { score: -1.5, emotions: ["grief"] },
+  "😭": { score: -1.5, emotions: ["grief"] },
+  "😞": { score: -1, emotions: ["frustrated"] },
+  "😔": { score: -1 },
+  "😕": { score: -0.5, emotions: ["confused"] },
+  "🤔": { score: 0, emotions: ["confused"] },
+  "😐": { score: 0 },
+  "🙂": { score: 0.5 },
+  "😊": { score: 1 },
+  "😍": { score: 2, emotions: ["delighted"] },
+  "🥰": { score: 2, emotions: ["delighted"] },
+  "❤️": { score: 1.5, emotions: ["delighted"] },
+  "👍": { score: 1 },
+  "🙏": { score: 0.5 },
+  "✨": { score: 1 },
+  "🔥": { score: 0.5 },
+  "⚠️": { score: -0.5, emotions: ["urgent"] },
+  "🆘": { score: -1.5, emotions: ["urgent"] },
+};
 
 // ─── Score → SentimentLevel conversion ───────────────────────────────────────
 
 function scoreToLevel(score: number): SentimentLevel {
-  if (score <= -1.2) return 'very_negative'
-  if (score <= -0.3) return 'negative'
-  if (score < 0.3) return 'neutral'
-  if (score < 1.2) return 'positive'
-  return 'very_positive'
+  if (score <= -1.2) return "very_negative";
+  if (score <= -0.3) return "negative";
+  if (score < 0.3) return "neutral";
+  if (score < 1.2) return "positive";
+  return "very_positive";
 }
 
 // ─── Heuristic Analyser ───────────────────────────────────────────────────────
 
 interface HeuristicResult {
-  score: number
-  emotions: Set<EmotionTag>
-  isSarcastic: boolean
-  isUrgent: boolean
+  score: number;
+  emotions: Set<EmotionTag>;
+  isSarcastic: boolean;
+  isUrgent: boolean;
   /** Confidence that heuristics alone are sufficient */
-  heuristicConfidence: number
+  heuristicConfidence: number;
 }
 
 function analyseHeuristic(text: string, language: string): HeuristicResult {
-  const lower = text.toLowerCase()
-  let score = 0
-  const emotions = new Set<EmotionTag>()
-  let isSarcastic = false
-  let isUrgent = false
-  let signals = 0
+  const lower = text.toLowerCase();
+  let score = 0;
+  const emotions = new Set<EmotionTag>();
+  let isSarcastic = false;
+  let isUrgent = false;
+  let signals = 0;
 
   // ── Very-negative phrases (highest priority) ────────────────────────────
   for (const phrase of VERY_NEGATIVE_PHRASES) {
     if (lower.includes(phrase)) {
-      score -= 2
-      signals += 2
-      emotions.add('frustrated')
+      score -= 2;
+      signals += 2;
+      emotions.add("frustrated");
     }
   }
 
   // ── Urgency signals ─────────────────────────────────────────────────────
   for (const signal of URGENCY_SIGNALS) {
     if (lower.includes(signal)) {
-      isUrgent = true
-      emotions.add('urgent')
-      signals++
-      break
+      isUrgent = true;
+      emotions.add("urgent");
+      signals++;
+      break;
     }
   }
 
   // ── Emoji analysis ──────────────────────────────────────────────────────
   for (const [emoji, data] of Object.entries(EMOJI_SENTIMENT)) {
     if (text.includes(emoji)) {
-      score += data.score
-      data.emotions?.forEach(e => emotions.add(e))
-      signals++
+      score += data.score;
+      data.emotions?.forEach((e) => emotions.add(e));
+      signals++;
     }
   }
 
   // ── Lexicon token matching ───────────────────────────────────────────────
   // Test multi-word phrases first, then single tokens
   for (const [phrase, phraseScore] of Object.entries(HINGLISH_LEXICON)) {
-    if (phrase.includes(' ') && lower.includes(phrase)) {
-      score += phraseScore
-      signals++
+    if (phrase.includes(" ") && lower.includes(phrase)) {
+      score += phraseScore;
+      signals++;
     }
   }
 
-  const tokens = lower.split(/\s+/)
+  const tokens = lower.split(/\s+/);
   for (const token of tokens) {
-    const tok = token.replace(/[^a-z]/g, '')
+    const tok = token.replace(/[^a-z]/g, "");
     if (tok && HINGLISH_LEXICON[tok] !== undefined) {
-      score += HINGLISH_LEXICON[tok] * 0.5 // single tokens count half vs. phrases
-      signals++
+      score += HINGLISH_LEXICON[tok] * 0.5; // single tokens count half vs. phrases
+      signals++;
     }
   }
 
@@ -183,33 +245,35 @@ function analyseHeuristic(text: string, language: string): HeuristicResult {
   if (score < 0) {
     for (const trigger of SARCASM_TRIGGERS) {
       if (lower.includes(trigger)) {
-        isSarcastic = true
-        score -= 1 // flip sarcasm bonus
-        signals++
-        break
+        isSarcastic = true;
+        score -= 1; // flip sarcasm bonus
+        signals++;
+        break;
       }
     }
   }
 
   // Negative question mark after "bilkul" or "wah" is strong sarcasm
   if (lower.match(/\b(bilkul|wah)\b.*[!?]/) && score < -0.5) {
-    isSarcastic = true
+    isSarcastic = true;
   }
 
   // ── Emotion tagging ──────────────────────────────────────────────────────
-  if (score <= -1.5) emotions.add('frustrated')
-  if (lower.match(/\b(samajh nahi|confused|kya matlab|kyun)\b/)) emotions.add('confused')
-  if (score >= 1.5) emotions.add('delighted')
-  if (isUrgent) emotions.add('urgent')
-  if (lower.match(/\b(grief|dukh|bahut bura|devastat)\b/)) emotions.add('grief')
+  if (score <= -1.5) emotions.add("frustrated");
+  if (lower.match(/\b(samajh nahi|confused|kya matlab|kyun)\b/))
+    emotions.add("confused");
+  if (score >= 1.5) emotions.add("delighted");
+  if (isUrgent) emotions.add("urgent");
+  if (lower.match(/\b(grief|dukh|bahut bura|devastat)\b/))
+    emotions.add("grief");
 
   // Normalise score to -2..+2 range
-  const clampedScore = Math.max(-2, Math.min(2, score))
+  const clampedScore = Math.max(-2, Math.min(2, score));
   // Normalise to -1..+1
-  const normScore = clampedScore / 2
+  const normScore = clampedScore / 2;
 
   // Confidence: more signals = more confidence
-  const heuristicConfidence = signals >= 3 ? 0.85 : signals >= 1 ? 0.6 : 0.3
+  const heuristicConfidence = signals >= 3 ? 0.85 : signals >= 1 ? 0.6 : 0.3;
 
   return {
     score: normScore,
@@ -217,7 +281,7 @@ function analyseHeuristic(text: string, language: string): HeuristicResult {
     isSarcastic,
     isUrgent,
     heuristicConfidence,
-  }
+  };
 }
 
 // ─── Claude Sentiment Prompt ──────────────────────────────────────────────────
@@ -258,7 +322,7 @@ Return ONLY valid JSON:
   "isUrgent": <true|false>,
   "confidence": <0.0 to 1.0>,
   "reasoning": "<one sentence>"
-}`
+}`;
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
@@ -274,18 +338,18 @@ export async function analyzeSentiment(
 ): Promise<SentimentResult> {
   if (!text || text.trim().length === 0) {
     return {
-      sentiment: 'neutral',
+      sentiment: "neutral",
       score: 0,
       emotions: [],
       isSarcastic: false,
       isUrgent: false,
       confidence: 0.9,
-      source: 'heuristic',
-    }
+      source: "heuristic",
+    };
   }
 
   // ── Stage 1: Fast heuristic pass ─────────────────────────────────────────
-  const heuristic = analyseHeuristic(text, language)
+  const heuristic = analyseHeuristic(text, language);
 
   if (heuristic.heuristicConfidence >= 0.85) {
     // High-confidence heuristic result — skip Claude API
@@ -296,44 +360,45 @@ export async function analyzeSentiment(
       isSarcastic: heuristic.isSarcastic,
       isUrgent: heuristic.isUrgent,
       confidence: heuristic.heuristicConfidence,
-      source: 'heuristic',
-    }
+      source: "heuristic",
+    };
   }
 
   // ── Stage 2: Claude API for nuanced / low-signal cases ───────────────────
   const userPrompt = `Language: ${language}
 Message: "${text}"
 
-Analyse sentiment and return JSON only.`
+Analyse sentiment and return JSON only.`;
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 256,
       temperature: 0,
       system: SENTIMENT_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userPrompt }],
-    })
+      messages: [{ role: "user", content: userPrompt }],
+    });
 
-    const block = response.content[0]
-    if (block.type !== 'text') throw new Error('Unexpected Claude response type')
+    const block = response.content[0];
+    if (block.type !== "text")
+      throw new Error("Unexpected Claude response type");
 
-    const raw = block.text.trim()
+    const raw = block.text.trim();
     const jsonStr = raw
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
-      .trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/```\s*$/i, "")
+      .trim();
 
     const parsed = JSON.parse(jsonStr) as {
-      sentiment: SentimentLevel
-      score: number
-      emotions: EmotionTag[]
-      isSarcastic: boolean
-      isUrgent: boolean
-      confidence: number
-      reasoning?: string
-    }
+      sentiment: SentimentLevel;
+      score: number;
+      emotions: EmotionTag[];
+      isSarcastic: boolean;
+      isUrgent: boolean;
+      confidence: number;
+      reasoning?: string;
+    };
 
     return {
       sentiment: parsed.sentiment,
@@ -342,10 +407,10 @@ Analyse sentiment and return JSON only.`
       isSarcastic: Boolean(parsed.isSarcastic),
       isUrgent: Boolean(parsed.isUrgent) || heuristic.isUrgent,
       confidence: Math.min(1, Math.max(0, parsed.confidence ?? 0.7)),
-      source: 'ai',
-    }
+      source: "ai",
+    };
   } catch (err) {
-    console.error('[sentiment] Claude API error or parse failure:', err)
+    console.error("[sentiment] Claude API error or parse failure:", err);
 
     // Fall back to heuristic result
     return {
@@ -355,7 +420,7 @@ Analyse sentiment and return JSON only.`
       isSarcastic: heuristic.isSarcastic,
       isUrgent: heuristic.isUrgent,
       confidence: Math.max(0.4, heuristic.heuristicConfidence - 0.1),
-      source: 'heuristic',
-    }
+      source: "heuristic",
+    };
   }
 }

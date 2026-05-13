@@ -7,40 +7,40 @@
 //   2. Export the createFunction(...) result as a named const.
 //   3. Add it to the `allFunctions` array below.
 
-import { whatsappIncoming } from './whatsapp-incoming'
-import { instagramIncoming } from './instagram-incoming'
-import { webchatIncoming } from './webchat-incoming'
-import { aiRespond } from './ai-respond'
-import { aiEmbed } from './ai-embed'
-import { whatsappOutgoing } from './whatsapp-outgoing'
-import { instagramOutgoing } from './instagram-outgoing'
-import { shopifySync } from './shopify-sync'
-import { notificationsPush } from './notifications-push'
-import { proactiveMessage } from './proactive-message'
+import { whatsappIncoming } from "./whatsapp-incoming";
+import { instagramIncoming } from "./instagram-incoming";
+import { webchatIncoming } from "./webchat-incoming";
+import { aiRespond } from "./ai-respond";
+import { aiEmbed } from "./ai-embed";
+import { whatsappOutgoing } from "./whatsapp-outgoing";
+import { instagramOutgoing } from "./instagram-outgoing";
+import { shopifySync } from "./shopify-sync";
+import { notificationsPush } from "./notifications-push";
+import { proactiveMessage } from "./proactive-message";
 
 import {
   shopifyOrdersCreated,
   shopifyOrdersUpdated,
-} from './shopify-orders-created'
-import { shopifyOrdersCancelled } from './shopify-orders-cancelled'
-import { shopifyOrdersFulfilled } from './shopify-orders-fulfilled'
+} from "./shopify-orders-created";
+import { shopifyOrdersCancelled } from "./shopify-orders-cancelled";
+import { shopifyOrdersFulfilled } from "./shopify-orders-fulfilled";
 import {
   shopifyCustomersCreated,
   shopifyCustomersUpdated,
-} from './shopify-customers'
+} from "./shopify-customers";
 import {
   shopifyProductsCreated,
   shopifyProductsUpdated,
   shopifyProductsDeleted,
-} from './shopify-products'
-import { shopifyAppUninstalled } from './shopify-app-uninstalled'
-import { shopifyCustomersDataRequest } from './shopify-customers-data-request'
-import { shopifyCustomersRedact } from './shopify-customers-redact'
-import { shopifyShopRedact } from './shopify-shop-redact'
+} from "./shopify-products";
+import { shopifyAppUninstalled } from "./shopify-app-uninstalled";
+import { shopifyCustomersDataRequest } from "./shopify-customers-data-request";
+import { shopifyCustomersRedact } from "./shopify-customers-redact";
+import { shopifyShopRedact } from "./shopify-shop-redact";
 
-import { waSessionExpiry } from './cron/wa-session-expiry'
-import { analyticsRollup } from './cron/analytics-rollup'
-import { kbRefresh } from './cron/kb-refresh'
+import { waSessionExpiry } from "./cron/wa-session-expiry";
+import { analyticsRollup } from "./cron/analytics-rollup";
+import { kbRefresh } from "./cron/kb-refresh";
 
 export {
   whatsappIncoming,
@@ -69,7 +69,7 @@ export {
   waSessionExpiry,
   analyticsRollup,
   kbRefresh,
-}
+};
 
 /**
  * Single source of truth: every function the serve() endpoint should
@@ -110,7 +110,7 @@ export const allFunctions = [
   waSessionExpiry,
   analyticsRollup,
   kbRefresh,
-] as const
+] as const;
 
 // Backwards-compat: the older `functions` name some consumers might still use.
-export const functions = allFunctions
+export const functions = allFunctions;

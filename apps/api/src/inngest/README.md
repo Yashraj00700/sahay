@@ -64,6 +64,7 @@ npx inngest-cli dev
 ```
 
 This boots a local Inngest dev server that:
+
 - Discovers your registered functions by hitting `/api/inngest`.
 - Provides a UI at `http://localhost:8288` for sending test events,
   inspecting runs, replaying failed steps.

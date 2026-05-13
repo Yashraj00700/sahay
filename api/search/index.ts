@@ -11,114 +11,136 @@
 //
 // Returns: { results: { conversations, customers }, pagination, tookMs }.
 
-import { z } from 'zod'
-import { sql } from 'drizzle-orm'
+import { z } from "zod";
+import { sql } from "drizzle-orm";
 import type {
   MessageSearchResult,
   CustomerSearchResult,
   SearchResponse,
-} from '@sahay/shared'
-import { defineAuthedHandler, parseQuery } from '../../apps/api/src/lib/handler'
-import { enforce, limits } from '../../apps/api/src/lib/rate-limit'
-import { auditAction } from '../../apps/api/src/services/audit'
+} from "@sahay/shared";
+import {
+  defineAuthedHandler,
+  parseQuery,
+} from "../../apps/api/src/lib/handler";
+import { enforce, limits } from "../../apps/api/src/lib/rate-limit";
+import { auditAction } from "../../apps/api/src/services/audit";
 
-const STATUS_VALUES = ['open', 'pending', 'snoozed', 'resolved', 'closed', 'all'] as const
-const CHANNEL_VALUES = ['whatsapp', 'instagram', 'webchat', 'email', 'all'] as const
+const STATUS_VALUES = [
+  "open",
+  "pending",
+  "snoozed",
+  "resolved",
+  "closed",
+  "all",
+] as const;
+const CHANNEL_VALUES = [
+  "whatsapp",
+  "instagram",
+  "webchat",
+  "email",
+  "all",
+] as const;
 
 const searchQuerySchema = z.object({
-  q:        z.string().default(''),
-  type:     z.enum(['all', 'conversations', 'customers']).default('all'),
-  status:   z.enum(STATUS_VALUES).default('all'),
-  channel:  z.enum(CHANNEL_VALUES).default('all'),
+  q: z.string().default(""),
+  type: z.enum(["all", "conversations", "customers"]).default("all"),
+  status: z.enum(STATUS_VALUES).default("all"),
+  channel: z.enum(CHANNEL_VALUES).default("all"),
   dateFrom: z.string().datetime().optional(),
-  dateTo:   z.string().datetime().optional(),
-  page:     z.coerce.number().int().min(1).default(1),
+  dateTo: z.string().datetime().optional(),
+  page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
-})
+});
 
 interface ConversationHitRow {
-  conversation_id: string
-  channel: string
-  status: string | null
-  primary_intent: string | null
-  customer_id: string
-  customer_name: string | null
-  customer_phone: string | null
-  customer_tier: string | null
-  snippet: string | null
-  matched_at: Date | null
-  rank: number
+  conversation_id: string;
+  channel: string;
+  status: string | null;
+  primary_intent: string | null;
+  customer_id: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_tier: string | null;
+  snippet: string | null;
+  matched_at: Date | null;
+  rank: number;
 }
 
 interface CustomerHitRow {
-  id: string
-  name: string | null
-  phone: string | null
-  email: string | null
-  city: string | null
-  tier: string | null
-  total_orders: number | null
+  id: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  city: string | null;
+  tier: string | null;
+  total_orders: number | null;
 }
 
 interface CountRow {
-  count: number
+  count: number;
 }
 
-const empty = (page: number, pageSize: number, tookMs: number): SearchResponse => ({
+const empty = (
+  page: number,
+  pageSize: number,
+  tookMs: number,
+): SearchResponse => ({
   results: { conversations: [], customers: [] },
   pagination: {
-    page, pageSize, total: 0, totalPages: 0,
-    hasNextPage: false, hasPreviousPage: false,
+    page,
+    pageSize,
+    total: 0,
+    totalPages: 0,
+    hasNextPage: false,
+    hasPreviousPage: false,
   },
   tookMs,
-})
+});
 
 export default defineAuthedHandler(
   async (req, res, ctx) => {
-    const startedAt = Date.now()
-    await enforce(limits.perTenant(), ctx.tenant.id)
+    const startedAt = Date.now();
+    await enforce(limits.perTenant(), ctx.tenant.id);
 
-    const q = parseQuery(searchQuerySchema, req.query)
-    const trimmed = q.q.trim()
-    const tenantId = ctx.tenant.id
+    const q = parseQuery(searchQuerySchema, req.query);
+    const trimmed = q.q.trim();
+    const tenantId = ctx.tenant.id;
 
     // UX rule: too-short queries return an empty result set, NOT a 400.
     // The Command Palette types as the user types, so we don't want to
     // flash error toasts before they finish their first word.
     if (trimmed.length < 2) {
-      res.status(200).json(empty(q.page, q.pageSize, Date.now() - startedAt))
-      return
+      res.status(200).json(empty(q.page, q.pageSize, Date.now() - startedAt));
+      return;
     }
 
-    const offset = (q.page - 1) * q.pageSize
-    const wantConversations = q.type === 'all' || q.type === 'conversations'
-    const wantCustomers     = q.type === 'all' || q.type === 'customers'
+    const offset = (q.page - 1) * q.pageSize;
+    const wantConversations = q.type === "all" || q.type === "conversations";
+    const wantCustomers = q.type === "all" || q.type === "customers";
 
     // websearch_to_tsquery is friendlier than plainto_tsquery: it supports
     // quoted phrases ("free returns"), -negation, and OR. Critically it
     // never throws on bad input — plainto_tsquery() can raise syntax errors.
-    const tsq = sql`websearch_to_tsquery('simple', ${trimmed})`
-    const ilikePattern = `%${trimmed}%`
+    const tsq = sql`websearch_to_tsquery('simple', ${trimmed})`;
+    const ilikePattern = `%${trimmed}%`;
 
-    let conversationHits: MessageSearchResult[] = []
-    let customerHits: CustomerSearchResult[] = []
-    let total = 0
+    let conversationHits: MessageSearchResult[] = [];
+    let customerHits: CustomerSearchResult[] = [];
+    let total = 0;
 
     await ctx.withTenant(async (tx) => {
       if (wantConversations) {
         // Optional channel/status filters scope the matching conversations.
-        const channelFilter = q.channel === 'all'
-          ? sql`true`
-          : sql`c.channel = ${q.channel}`
-        const statusFilter = q.status === 'all'
-          ? sql`true`
-          : sql`c.status = ${q.status}`
+        const channelFilter =
+          q.channel === "all" ? sql`true` : sql`c.channel = ${q.channel}`;
+        const statusFilter =
+          q.status === "all" ? sql`true` : sql`c.status = ${q.status}`;
         const dateFromFilter = q.dateFrom
           ? sql`m.created_at >= ${q.dateFrom}`
-          : sql`true`
+          : sql`true`;
         const dateToFilter = q.dateTo
           ? sql`m.created_at <= ${q.dateTo}`
-          : sql`true`
+          : sql`true`;
 
         // The CTE picks the single best message hit per conversation
         // (ROW_NUMBER ranks within conversation_id). We then join to
@@ -180,7 +202,7 @@ export default defineAuthedHandler(
           ORDER BY combined.rank DESC, c.updated_at DESC
           LIMIT ${q.pageSize}
           OFFSET ${offset}
-        `
+        `;
 
         // Total count uses the same UNION shape (without per-message ranking)
         // so pagination is honest. DISTINCT ensures no double-count when a
@@ -206,31 +228,36 @@ export default defineAuthedHandler(
                 AND ${statusFilter}
             ) ids
           ) distinct_ids
-        `
+        `;
 
         const [hitsResult, countResult] = await Promise.all([
           tx.execute(hitsSql),
           tx.execute(countSql),
-        ])
+        ]);
 
-        const hitsRows = hitsResult as unknown as ConversationHitRow[]
-        const countRows = countResult as unknown as CountRow[]
+        const hitsRows = hitsResult as unknown as ConversationHitRow[];
+        const countRows = countResult as unknown as CountRow[];
 
-        conversationHits = hitsRows.map((r): MessageSearchResult => ({
-          conversationId: r.conversation_id,
-          channel: r.channel as MessageSearchResult['channel'],
-          status: (r.status ?? 'open') as MessageSearchResult['status'],
-          primaryIntent: r.primary_intent ?? undefined,
-          customerId: r.customer_id,
-          customerName: r.customer_name ?? undefined,
-          customerPhone: r.customer_phone ?? undefined,
-          customerTier: (r.customer_tier ?? 'new') as MessageSearchResult['customerTier'],
-          snippet: r.snippet?.slice(0, 240) ?? undefined,
-          matchedAt: r.matched_at ? new Date(r.matched_at).toISOString() : undefined,
-          rank: typeof r.rank === 'number' ? r.rank : Number(r.rank),
-        }))
+        conversationHits = hitsRows.map(
+          (r): MessageSearchResult => ({
+            conversationId: r.conversation_id,
+            channel: r.channel as MessageSearchResult["channel"],
+            status: (r.status ?? "open") as MessageSearchResult["status"],
+            primaryIntent: r.primary_intent ?? undefined,
+            customerId: r.customer_id,
+            customerName: r.customer_name ?? undefined,
+            customerPhone: r.customer_phone ?? undefined,
+            customerTier: (r.customer_tier ??
+              "new") as MessageSearchResult["customerTier"],
+            snippet: r.snippet?.slice(0, 240) ?? undefined,
+            matchedAt: r.matched_at
+              ? new Date(r.matched_at).toISOString()
+              : undefined,
+            rank: typeof r.rank === "number" ? r.rank : Number(r.rank),
+          }),
+        );
 
-        total = countRows[0]?.count ?? 0
+        total = countRows[0]?.count ?? 0;
       }
 
       if (wantCustomers) {
@@ -251,23 +278,25 @@ export default defineAuthedHandler(
             CASE WHEN name  ILIKE ${ilikePattern} THEN 0 ELSE 1 END,
             COALESCE(total_orders, 0) DESC
           LIMIT ${q.pageSize}
-        `
-        const custResult = await tx.execute(custSql)
-        const custRows = custResult as unknown as CustomerHitRow[]
-        customerHits = custRows.map((r): CustomerSearchResult => ({
-          id: r.id,
-          name: r.name ?? undefined,
-          phone: r.phone ?? undefined,
-          email: r.email ?? undefined,
-          city: r.city ?? undefined,
-          tier: (r.tier ?? 'new') as CustomerSearchResult['tier'],
-          totalOrders: r.total_orders ?? 0,
-        }))
+        `;
+        const custResult = await tx.execute(custSql);
+        const custRows = custResult as unknown as CustomerHitRow[];
+        customerHits = custRows.map(
+          (r): CustomerSearchResult => ({
+            id: r.id,
+            name: r.name ?? undefined,
+            phone: r.phone ?? undefined,
+            email: r.email ?? undefined,
+            city: r.city ?? undefined,
+            tier: (r.tier ?? "new") as CustomerSearchResult["tier"],
+            totalOrders: r.total_orders ?? 0,
+          }),
+        );
       }
-    })
+    });
 
-    const totalPages = Math.ceil(total / q.pageSize)
-    const tookMs = Date.now() - startedAt
+    const totalPages = Math.ceil(total / q.pageSize);
+    const tookMs = Date.now() - startedAt;
 
     const response: SearchResponse = {
       results: { conversations: conversationHits, customers: customerHits },
@@ -280,17 +309,17 @@ export default defineAuthedHandler(
         hasPreviousPage: q.page > 1,
       },
       tookMs,
-    }
+    };
 
     // Audit asynchronously after the response is built but before sending —
     // auditAction swallows its own errors, so it can't affect the response.
     await auditAction({
       tenantId: ctx.tenant.id,
-      actorType: 'agent',
+      actorType: "agent",
       actorId: ctx.agent.id,
       actorEmail: ctx.agent.email,
-      action: 'search.executed',
-      resourceType: 'search',
+      action: "search.executed",
+      resourceType: "search",
       ipAddress: ctx.ip,
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
@@ -304,9 +333,9 @@ export default defineAuthedHandler(
         resultCount: conversationHits.length + customerHits.length,
         tookMs,
       },
-    })
+    });
 
-    res.status(200).json(response)
+    res.status(200).json(response);
   },
-  { methods: ['GET'] },
-)
+  { methods: ["GET"] },
+);

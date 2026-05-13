@@ -23,12 +23,12 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
-} from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-import { env } from '../../lib/env'
-import { IntegrationError } from '../../lib/errors'
-import { logger } from '../../lib/logger'
+import { env } from "../../lib/env";
+import { IntegrationError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -37,49 +37,49 @@ import { logger } from '../../lib/logger'
  * everywhere (including agent uploads) so we don't accidentally accept files
  * we can't later forward to WA.
  */
-export const MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024
+export const MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 
 /** Default expiry for both signed PUT (uploads) and signed GET (reads). */
-const DEFAULT_SIGNED_URL_EXPIRES_SEC = 5 * 60 // 5 minutes
+const DEFAULT_SIGNED_URL_EXPIRES_SEC = 5 * 60; // 5 minutes
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface PutObjectArgs {
   /** Object key (path inside the bucket); should not start with a slash. */
-  key: string
+  key: string;
   /** Bytes to upload. Buffer or Uint8Array; we measure size from `byteLength`. */
-  body: Buffer | Uint8Array
+  body: Buffer | Uint8Array;
   /** MIME type, written to the object so signed reads serve correct headers. */
-  contentType: string
+  contentType: string;
 }
 
 export interface PutObjectResult {
-  url: string
-  key: string
-  size: number
+  url: string;
+  key: string;
+  size: number;
 }
 
 export interface GetSignedUploadUrlArgs {
-  key: string
-  contentType: string
-  expiresInSec?: number
+  key: string;
+  contentType: string;
+  expiresInSec?: number;
 }
 
 export interface GetSignedUploadUrlResult {
-  url: string
-  key: string
+  url: string;
+  key: string;
 }
 
 export interface KeyForArgs {
-  tenantId: string
-  channel: 'whatsapp' | 'instagram' | 'webchat' | 'email' | 'agent-upload'
-  messageId: string
-  ext: string
+  tenantId: string;
+  channel: "whatsapp" | "instagram" | "webchat" | "email" | "agent-upload";
+  messageId: string;
+  ext: string;
 }
 
 // ─── R2 client (lazy singleton) ───────────────────────────────────────────────
 
-let cachedClient: S3Client | null = null
+let cachedClient: S3Client | null = null;
 
 /**
  * True when all R2 env vars are present. Callers (e.g. WhatsApp media
@@ -89,19 +89,19 @@ let cachedClient: S3Client | null = null
 export function isR2Configured(): boolean {
   return Boolean(
     env.R2_ACCOUNT_ID &&
-      env.R2_ACCESS_KEY_ID &&
-      env.R2_SECRET_ACCESS_KEY &&
-      env.R2_BUCKET_NAME,
-  )
+    env.R2_ACCESS_KEY_ID &&
+    env.R2_SECRET_ACCESS_KEY &&
+    env.R2_BUCKET_NAME,
+  );
 }
 
 function getClient(): S3Client {
-  if (cachedClient) return cachedClient
+  if (cachedClient) return cachedClient;
   if (!isR2Configured()) {
-    throw new IntegrationError('r2', 'R2 not configured (missing env vars)')
+    throw new IntegrationError("r2", "R2 not configured (missing env vars)");
   }
   cachedClient = new S3Client({
-    region: 'auto',
+    region: "auto",
     endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {
       accessKeyId: env.R2_ACCESS_KEY_ID as string,
@@ -111,15 +111,15 @@ function getClient(): S3Client {
     // virtual-host style works for our use case but path-style is safer
     // when the bucket name contains uppercase chars or dots.
     forcePathStyle: false,
-  })
-  return cachedClient
+  });
+  return cachedClient;
 }
 
 function getBucket(): string {
   if (!env.R2_BUCKET_NAME) {
-    throw new IntegrationError('r2', 'R2 bucket name not configured')
+    throw new IntegrationError("r2", "R2 bucket name not configured");
   }
-  return env.R2_BUCKET_NAME
+  return env.R2_BUCKET_NAME;
 }
 
 // ─── Key helper ───────────────────────────────────────────────────────────────
@@ -134,11 +134,11 @@ function getBucket(): string {
  * structurally impossible.
  */
 export function keyFor(args: KeyForArgs): string {
-  const now = new Date()
-  const year = String(now.getUTCFullYear())
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0')
-  const ext = args.ext.replace(/^\./, '').toLowerCase() || 'bin'
-  return `tenant/${args.tenantId}/${args.channel}/${year}/${month}/${args.messageId}.${ext}`
+  const now = new Date();
+  const year = String(now.getUTCFullYear());
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const ext = args.ext.replace(/^\./, "").toLowerCase() || "bin";
+  return `tenant/${args.tenantId}/${args.channel}/${year}/${month}/${args.messageId}.${ext}`;
 }
 
 // ─── Public URL helper ────────────────────────────────────────────────────────
@@ -150,13 +150,13 @@ export function keyFor(args: KeyForArgs): string {
  * placeholder so logs don't break and callers can still tell what was stored.
  */
 export function publicUrl(key: string): string {
-  const base = env.R2_PUBLIC_URL
+  const base = env.R2_PUBLIC_URL;
   if (!base) {
-    return `r2://${env.R2_BUCKET_NAME ?? 'unconfigured'}/${key}`
+    return `r2://${env.R2_BUCKET_NAME ?? "unconfigured"}/${key}`;
   }
-  const trimmed = base.endsWith('/') ? base.slice(0, -1) : base
-  const cleanKey = key.startsWith('/') ? key.slice(1) : key
-  return `${trimmed}/${cleanKey}`
+  const trimmed = base.endsWith("/") ? base.slice(0, -1) : base;
+  const cleanKey = key.startsWith("/") ? key.slice(1) : key;
+  return `${trimmed}/${cleanKey}`;
 }
 
 // ─── Operations ───────────────────────────────────────────────────────────────
@@ -171,16 +171,16 @@ export function publicUrl(key: string): string {
  *   - any S3 SDK error (network, auth, etc.)
  */
 export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
-  const size = args.body.byteLength
+  const size = args.body.byteLength;
   if (size > MAX_FILE_SIZE_BYTES) {
     throw new IntegrationError(
-      'r2',
+      "r2",
       `Object exceeds ${MAX_FILE_SIZE_BYTES} bytes (got ${size})`,
-    )
+    );
   }
 
-  const client = getClient()
-  const bucket = getBucket()
+  const client = getClient();
+  const bucket = getBucket();
 
   try {
     await client.send(
@@ -191,19 +191,19 @@ export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
         ContentType: args.contentType,
         ContentLength: size,
       }),
-    )
+    );
   } catch (err) {
-    logger.error({ err, key: args.key, size }, 'r2.putObject failed')
+    logger.error({ err, key: args.key, size }, "r2.putObject failed");
     throw new IntegrationError(
-      'r2',
-      err instanceof Error ? err.message : 'putObject failed',
+      "r2",
+      err instanceof Error ? err.message : "putObject failed",
       err,
-    )
+    );
   }
 
-  const url = publicUrl(args.key)
-  logger.debug({ key: args.key, size, url }, 'r2.putObject ok')
-  return { url, key: args.key, size }
+  const url = publicUrl(args.key);
+  logger.debug({ key: args.key, size, url }, "r2.putObject ok");
+  return { url, key: args.key, size };
 }
 
 /**
@@ -213,9 +213,9 @@ export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
 export async function getSignedUploadUrl(
   args: GetSignedUploadUrlArgs,
 ): Promise<GetSignedUploadUrlResult> {
-  const client = getClient()
-  const bucket = getBucket()
-  const expiresIn = args.expiresInSec ?? DEFAULT_SIGNED_URL_EXPIRES_SEC
+  const client = getClient();
+  const bucket = getBucket();
+  const expiresIn = args.expiresInSec ?? DEFAULT_SIGNED_URL_EXPIRES_SEC;
 
   try {
     const url = await getSignedUrl(
@@ -226,19 +226,19 @@ export async function getSignedUploadUrl(
         ContentType: args.contentType,
       }),
       { expiresIn },
-    )
+    );
     logger.debug(
       { key: args.key, expiresIn, contentType: args.contentType },
-      'r2.getSignedUploadUrl ok',
-    )
-    return { url, key: args.key }
+      "r2.getSignedUploadUrl ok",
+    );
+    return { url, key: args.key };
   } catch (err) {
-    logger.error({ err, key: args.key }, 'r2.getSignedUploadUrl failed')
+    logger.error({ err, key: args.key }, "r2.getSignedUploadUrl failed");
     throw new IntegrationError(
-      'r2',
-      err instanceof Error ? err.message : 'getSignedUploadUrl failed',
+      "r2",
+      err instanceof Error ? err.message : "getSignedUploadUrl failed",
       err,
-    )
+    );
   }
 }
 
@@ -248,41 +248,41 @@ export async function getSignedUploadUrl(
  * that a leaked URL is not a long-term credential.
  */
 export async function getSignedReadUrl(args: {
-  key: string
-  expiresInSec?: number
+  key: string;
+  expiresInSec?: number;
 }): Promise<string> {
-  const client = getClient()
-  const bucket = getBucket()
-  const expiresIn = args.expiresInSec ?? DEFAULT_SIGNED_URL_EXPIRES_SEC
+  const client = getClient();
+  const bucket = getBucket();
+  const expiresIn = args.expiresInSec ?? DEFAULT_SIGNED_URL_EXPIRES_SEC;
 
   try {
     return await getSignedUrl(
       client,
       new GetObjectCommand({ Bucket: bucket, Key: args.key }),
       { expiresIn },
-    )
+    );
   } catch (err) {
-    logger.error({ err, key: args.key }, 'r2.getSignedReadUrl failed')
+    logger.error({ err, key: args.key }, "r2.getSignedReadUrl failed");
     throw new IntegrationError(
-      'r2',
-      err instanceof Error ? err.message : 'getSignedReadUrl failed',
+      "r2",
+      err instanceof Error ? err.message : "getSignedReadUrl failed",
       err,
-    )
+    );
   }
 }
 
 export async function deleteObject(key: string): Promise<void> {
-  const client = getClient()
-  const bucket = getBucket()
+  const client = getClient();
+  const bucket = getBucket();
   try {
-    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }))
-    logger.debug({ key }, 'r2.deleteObject ok')
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    logger.debug({ key }, "r2.deleteObject ok");
   } catch (err) {
-    logger.error({ err, key }, 'r2.deleteObject failed')
+    logger.error({ err, key }, "r2.deleteObject failed");
     throw new IntegrationError(
-      'r2',
-      err instanceof Error ? err.message : 'deleteObject failed',
+      "r2",
+      err instanceof Error ? err.message : "deleteObject failed",
       err,
-    )
+    );
   }
 }

@@ -10,50 +10,51 @@
 // Cross-tenant (global) experiments are visible to super_admin only — admins
 // only see their own tenant's row.
 
-import { and, eq, isNull, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import {
   experiments,
   experimentAssignments,
   experimentOutcomes,
   type ExperimentVariant,
-} from '@sahay/db'
+} from "@sahay/db";
 import {
   defineAuthedHandler,
   requireRole,
-} from '../../../../apps/api/src/lib/handler'
-import { enforce, limits } from '../../../../apps/api/src/lib/rate-limit'
-import { AppError } from '../../../../apps/api/src/lib/errors'
+} from "../../../../apps/api/src/lib/handler";
+import { enforce, limits } from "../../../../apps/api/src/lib/rate-limit";
+import { AppError } from "../../../../apps/api/src/lib/errors";
 
 interface VariantResult {
-  variant: string
-  n: number
-  csatMean: number | null
-  escalatedRate: number
-  turnCountMean: number
+  variant: string;
+  n: number;
+  csatMean: number | null;
+  escalatedRate: number;
+  turnCountMean: number;
 }
 
 interface AggregateRow {
-  variant: string
-  assignmentCount: number
-  csatSum: number | null
-  csatCount: number
-  escalatedSum: number
-  turnCountSum: number | null
-  turnCountCount: number
+  variant: string;
+  assignmentCount: number;
+  csatSum: number | null;
+  csatCount: number;
+  escalatedSum: number;
+  turnCountSum: number | null;
+  turnCountCount: number;
 }
 
 export default defineAuthedHandler(
   async (req, res, ctx) => {
-    requireRole(ctx, ['super_admin', 'admin'])
-    await enforce(limits.perTenant(), ctx.tenant.id)
+    requireRole(ctx, ["super_admin", "admin"]);
+    await enforce(limits.perTenant(), ctx.tenant.id);
 
     const key =
-      typeof req.query.key === 'string'
+      typeof req.query.key === "string"
         ? req.query.key
         : Array.isArray(req.query.key)
           ? req.query.key[0]
-          : null
-    if (!key) throw new AppError('VALIDATION_ERROR', 'Missing experiment key', 400)
+          : null;
+    if (!key)
+      throw new AppError("VALIDATION_ERROR", "Missing experiment key", 400);
 
     // Find the experiment. Tenant-scoped first, then global if super_admin.
     const expRows = await ctx.withTenant((tx) =>
@@ -63,16 +64,19 @@ export default defineAuthedHandler(
         .where(
           and(
             eq(experiments.key, key),
-            ctx.agent.role === 'super_admin'
-              ? or(eq(experiments.tenantId, ctx.tenant.id), isNull(experiments.tenantId))
+            ctx.agent.role === "super_admin"
+              ? or(
+                  eq(experiments.tenantId, ctx.tenant.id),
+                  isNull(experiments.tenantId),
+                )
               : eq(experiments.tenantId, ctx.tenant.id),
           ),
         )
         .limit(1),
-    )
+    );
 
-    const exp = expRows[0]
-    if (!exp) throw new AppError('NOT_FOUND', 'Experiment not found', 404)
+    const exp = expRows[0];
+    if (!exp) throw new AppError("NOT_FOUND", "Experiment not found", 404);
 
     // Pull aggregates in one trip:
     //   - count(*) per variant for assignment count
@@ -92,51 +96,52 @@ export default defineAuthedHandler(
         WHERE a.experiment_id = ${exp.id}
         GROUP BY a.variant
       `),
-    )
+    );
 
     // drizzle's `.execute` returns differently shaped objects depending on
     // driver; normalise to plain row records.
-    const rows = (aggRowsRaw as unknown as { rows?: Record<string, unknown>[] }).rows ??
-      (aggRowsRaw as unknown as Record<string, unknown>[])
+    const rows =
+      (aggRowsRaw as unknown as { rows?: Record<string, unknown>[] }).rows ??
+      (aggRowsRaw as unknown as Record<string, unknown>[]);
 
-    const aggByVariant = new Map<string, AggregateRow>()
+    const aggByVariant = new Map<string, AggregateRow>();
     for (const r of rows) {
-      const variant = String(r.variant)
+      const variant = String(r.variant);
       aggByVariant.set(variant, {
         variant,
         assignmentCount: Number(r.assignment_count ?? 0),
         csatSum: r.csat_sum != null ? Number(r.csat_sum) : null,
         csatCount: Number(r.csat_count ?? 0),
         escalatedSum: Number(r.escalated_sum ?? 0),
-        turnCountSum: r.turn_count_sum != null ? Number(r.turn_count_sum) : null,
+        turnCountSum:
+          r.turn_count_sum != null ? Number(r.turn_count_sum) : null,
         turnCountCount: Number(r.turn_count_count ?? 0),
-      })
+      });
     }
 
     // Build the response: one row per defined variant (so a variant with
     // zero assignments still appears with n=0).
-    const variants = (exp.variants ?? []) as ExperimentVariant[]
+    const variants = (exp.variants ?? []) as ExperimentVariant[];
     const results: VariantResult[] = variants.map((v) => {
-      const agg = aggByVariant.get(v.name)
-      const n = agg?.assignmentCount ?? 0
+      const agg = aggByVariant.get(v.name);
+      const n = agg?.assignmentCount ?? 0;
       const csatMean =
         agg && agg.csatCount > 0 && agg.csatSum != null
           ? agg.csatSum / agg.csatCount
-          : null
-      const escalatedRate =
-        n > 0 ? (agg?.escalatedSum ?? 0) / n : 0
+          : null;
+      const escalatedRate = n > 0 ? (agg?.escalatedSum ?? 0) / n : 0;
       const turnCountMean =
         agg && agg.turnCountCount > 0 && agg.turnCountSum != null
           ? agg.turnCountSum / agg.turnCountCount
-          : 0
+          : 0;
       return {
         variant: v.name,
         n,
         csatMean,
         escalatedRate,
         turnCountMean,
-      }
-    })
+      };
+    });
 
     // Include any "orphan" variants present in assignments but missing from
     // the current variants list (e.g. variant was renamed/removed) — ensures
@@ -151,12 +156,14 @@ export default defineAuthedHandler(
               ? agg.csatSum / agg.csatCount
               : null,
           escalatedRate:
-            agg.assignmentCount > 0 ? agg.escalatedSum / agg.assignmentCount : 0,
+            agg.assignmentCount > 0
+              ? agg.escalatedSum / agg.assignmentCount
+              : 0,
           turnCountMean:
             agg.turnCountCount > 0 && agg.turnCountSum != null
               ? agg.turnCountSum / agg.turnCountCount
               : 0,
-        })
+        });
       }
     }
 
@@ -168,7 +175,7 @@ export default defineAuthedHandler(
         isActive: exp.isActive ?? false,
       },
       results,
-    })
+    });
   },
-  { methods: ['GET'] },
-)
+  { methods: ["GET"] },
+);
