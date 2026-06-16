@@ -44,8 +44,12 @@ coverage/
 # Docker volumes (local)
 .docker/
 
-# Drizzle generated
-drizzle/
+# Drizzle: commit migration files; ignore meta journal cache only
+packages/db/drizzle/meta/_journal_cache.json
+
+# Local PDF / HTML artefacts (client deliverables — don't track)
+*.pdf
+sahay-overview.html
 
 # Uploaded files (local dev)
 uploads/

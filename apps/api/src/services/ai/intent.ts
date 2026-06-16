@@ -3,44 +3,43 @@
 // customer intent across 40+ categories spanning order, product, shipping,
 // payment, account, and brand queries.
 
-import Anthropic from '@anthropic-ai/sdk'
-import type { IntentCategory } from '@sahay/shared'
+import Anthropic from "@anthropic-ai/sdk";
+import type { IntentCategory } from "@sahay/shared";
+import { env } from "../../lib/env";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface IntentEntity {
   type:
-    | 'order_id'
-    | 'product_name'
-    | 'phone_number'
-    | 'email'
-    | 'pincode'
-    | 'amount'
-    | 'skin_type'
-    | 'ingredient'
-    | 'date'
-    | 'quantity'
-  value: string
-  raw: string
+    | "order_id"
+    | "product_name"
+    | "phone_number"
+    | "email"
+    | "pincode"
+    | "amount"
+    | "skin_type"
+    | "ingredient"
+    | "date"
+    | "quantity";
+  value: string;
+  raw: string;
 }
 
 export interface IntentResult {
-  intent: IntentCategory
-  confidence: number
-  subIntent?: string
-  entities: IntentEntity[]
+  intent: IntentCategory;
+  confidence: number;
+  subIntent?: string;
+  entities: IntentEntity[];
   /** True when the message contains a human escalation request */
-  humanRequested: boolean
+  humanRequested: boolean;
   /** True when legal threat language is detected */
-  legalThreat: boolean
+  legalThreat: boolean;
   /** True when a STOP/opt-out keyword is present */
-  stopKeyword: boolean
+  stopKeyword: boolean;
   /** Raw model reasoning (for audit logging) */
-  reasoning?: string
+  reasoning?: string;
 }
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
@@ -271,7 +270,7 @@ Language: hinglish
   "stopKeyword": false,
   "reasoning": "Greeting with a product category mention but no specific question yet."
 }
-`
+`;
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
@@ -291,59 +290,65 @@ export async function classifyIntent(
 Context: "${context}"
 Language: ${language}
 
-Classify the intent and return JSON only.`
+Classify the intent and return JSON only.`;
 
-  let raw: string
+  let raw: string;
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 512,
       temperature: 0,
       system: INTENT_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userPrompt }],
-    })
+      messages: [{ role: "user", content: userPrompt }],
+    });
 
-    const block = response.content[0]
-    if (block.type !== 'text') throw new Error('Unexpected response type from Claude')
-    raw = block.text.trim()
+    const block = response.content[0];
+    if (block.type !== "text")
+      throw new Error("Unexpected response type from Claude");
+    raw = block.text.trim();
   } catch (err) {
-    console.error('[intent] Claude API error:', err)
+    console.error("[intent] Claude API error:", err);
     // Fallback: return low-confidence default rather than crashing the pipeline
     return {
-      intent: 'off_topic',
+      intent: "off_topic",
       confidence: 0.1,
       entities: [],
       humanRequested: false,
       legalThreat: false,
       stopKeyword: false,
-    }
+    };
   }
 
   // Strip possible markdown code fences
-  const jsonStr = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
+  const jsonStr = raw
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
 
-  let parsed: IntentResult
+  let parsed: IntentResult;
 
   try {
-    parsed = JSON.parse(jsonStr) as IntentResult
+    parsed = JSON.parse(jsonStr) as IntentResult;
   } catch (err) {
-    console.error('[intent] JSON parse error. Raw response:', raw)
+    console.error("[intent] JSON parse error. Raw response:", raw);
     return {
-      intent: 'off_topic',
+      intent: "off_topic",
       confidence: 0.1,
       entities: [],
       humanRequested: false,
       legalThreat: false,
       stopKeyword: false,
-    }
+    };
   }
 
   // Validate required fields
-  const validIntent = parsed.intent as IntentCategory
-  const confidence = typeof parsed.confidence === 'number'
-    ? Math.min(1, Math.max(0, parsed.confidence))
-    : 0.5
+  const validIntent = parsed.intent as IntentCategory;
+  const confidence =
+    typeof parsed.confidence === "number"
+      ? Math.min(1, Math.max(0, parsed.confidence))
+      : 0.5;
 
   return {
     intent: validIntent,
@@ -354,5 +359,5 @@ Classify the intent and return JSON only.`
     legalThreat: Boolean(parsed.legalThreat),
     stopKeyword: Boolean(parsed.stopKeyword),
     reasoning: parsed.reasoning,
-  }
+  };
 }

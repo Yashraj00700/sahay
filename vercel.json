@@ -1,18 +1,61 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd apps/web && npm run build",
+  "buildCommand": "npm run build --workspace=@sahay/web",
   "outputDirectory": "apps/web/dist",
   "installCommand": "npm install",
   "framework": null,
-  "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
-  ],
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "@vercel/node@5.1.0",
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/inngest.ts": {
+      "runtime": "@vercel/node@5.1.0",
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "api/webhooks/*.ts": {
+      "runtime": "@vercel/node@5.1.0",
+      "memory": 512,
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains; preload"
+        },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" }
+        { "key": "X-Frame-Options", "value": "DENY" },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=()"
+        }
+      ]
+    },
+    {
+      "source": "/((?!api/).*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://js.pusher.com https://browser.sentry-cdn.com https://js.sentry-cdn.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.pusher.com wss://*.pusher.com https://*.ingest.sentry.io https://api.anthropic.com https://api.openai.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+        }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "X-Robots-Tag", "value": "noindex" }
       ]
     }
   ]

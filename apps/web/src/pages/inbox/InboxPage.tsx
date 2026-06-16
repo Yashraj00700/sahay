@@ -1,62 +1,68 @@
-import { useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ConversationList } from '../../components/inbox/ConversationList'
-import { ChatThread } from '../../components/inbox/ChatThread'
-import { CustomerSidebar } from '../../components/inbox/CustomerSidebar'
-import { EmptyInboxState } from '../../components/inbox/EmptyInboxState'
-import { CommandPalette } from '../../components/inbox/CommandPalette'
-import { useInboxStore } from '../../store/inbox.store'
-import { useAuthStore } from '../../store/auth.store'
-import { queryKeys, queryClient } from '../../lib/queryClient'
-import { api } from '../../lib/api'
-import type { Conversation } from '@sahay/shared'
+import { useEffect, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { ConversationList } from "../../components/inbox/ConversationList";
+import { ChatThread } from "../../components/inbox/ChatThread";
+import { CustomerSidebar } from "../../components/inbox/CustomerSidebar";
+import { EmptyInboxState } from "../../components/inbox/EmptyInboxState";
+import { CommandPalette } from "../../components/inbox/CommandPalette";
+import { useInboxStore } from "../../store/inbox.store";
+import { useAuthStore } from "../../store/auth.store";
+import { queryKeys, queryClient } from "../../lib/queryClient";
+import { api } from "../../lib/api";
+import type { Conversation } from "@sahay/shared";
 
 export function InboxPage() {
-  const { conversationId } = useParams<{ conversationId: string }>()
-  const navigate = useNavigate()
-  const { tenant } = useAuthStore()
+  const { conversationId } = useParams<{ conversationId: string }>();
+  const navigate = useNavigate();
+  const { tenant } = useAuthStore();
   const {
     activeConversationId,
     setActiveConversation,
     isSidebarOpen,
     isFocusMode,
     toggleFocusMode,
-  } = useInboxStore()
+  } = useInboxStore();
 
   // Sync URL param with store
   useEffect(() => {
     if (conversationId && conversationId !== activeConversationId) {
-      setActiveConversation(conversationId)
+      setActiveConversation(conversationId);
     }
-  }, [conversationId])
+  }, [conversationId]);
 
-  const handleSelectConversation = useCallback((id: string) => {
-    setActiveConversation(id)
-    navigate(`/inbox/${id}`, { replace: true })
-  }, [navigate, setActiveConversation])
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      setActiveConversation(id);
+      navigate(`/inbox/${id}`, { replace: true });
+    },
+    [navigate, setActiveConversation],
+  );
 
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Only fire if not in an input/textarea
-      const target = e.target as HTMLElement
-      const inInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+      const target = e.target as HTMLElement;
+      const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 
-      if (e.key === '\\' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        toggleFocusMode()
+      if (e.key === "\\" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        toggleFocusMode();
       }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [toggleFocusMode])
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [toggleFocusMode]);
 
   const activeConv = useQuery({
-    queryKey: queryKeys.conversations.detail(activeConversationId ?? ''),
-    queryFn: () => api.get<Conversation>(`/conversations/${activeConversationId}`).then(r => r.data),
+    queryKey: queryKeys.conversations.detail(activeConversationId ?? ""),
+    queryFn: () =>
+      api
+        .get<Conversation>(`/conversations/${activeConversationId}`)
+        .then((r) => r.data),
     enabled: !!activeConversationId,
-  })
+  });
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -97,5 +103,5 @@ export function InboxPage() {
       {/* Command Palette (Cmd+K) */}
       <CommandPalette />
     </div>
-  )
+  );
 }

@@ -1,7 +1,15 @@
 version: '3.9'
 
+# Local development infrastructure for Sahay.
+#
+# Production targets: Neon (Postgres + pgvector) and Upstash (Redis HTTP API).
+# This file exists only to give developers a convenient local Postgres so
+# they can run migrations and tests without provisioning Neon. Redis was
+# removed because BullMQ/Socket.io were replaced by Inngest/Pusher; Upstash
+# is HTTP-based and works fine against the production endpoint from a dev
+# laptop without any local server.
+
 services:
-  # ─── PostgreSQL 16 with pgvector extension ─────────────────
   postgres:
     image: pgvector/pgvector:pg16
     container_name: sahay_postgres
@@ -21,40 +29,6 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # ─── Redis 7 (for caching + BullMQ queues + Socket.io) ─────
-  redis:
-    image: redis:7-alpine
-    container_name: sahay_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 512mb
-      --maxmemory-policy noeviction
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
-  # ─── Redis Commander (web UI for Redis — dev only) ──────────
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    container_name: sahay_redis_ui
-    environment:
-      REDIS_HOSTS: local:redis:6379
-    ports:
-      - "8081:8081"
-    depends_on:
-      - redis
-    profiles:
-      - tools
-
-  # ─── pgAdmin (web UI for Postgres — dev only) ───────────────
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: sahay_pgadmin
@@ -70,6 +44,4 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
